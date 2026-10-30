@@ -29,13 +29,19 @@ f = lambda x: ("%.3f" % x).replace(".", ",")
 g = {0: "0 (вето)", 1: "1"}.get(r["G"], "⊥")
 d = r["decision_detail"]
 c = "\033[1;32m" if d == "допуск" else ("\033[1;31m" if d.startswith("отказ") else "\033[1;33m")
-print("  R_P = %s, R_P^min…R_P^max = %s…%s, G_P = %s, B_P = %d, время %.2f с"
-      % (f(r["R"]), f(r["R_min"]), f(r["R_max"]), g, r["B"], r["elapsed_s"]))
+print("  R_P = %s, R_P^min…R_P^max = %s…%s, G_P = %s, B_P = %d, время %s с"
+      % (f(r["R"]), f(r["R_min"]), f(r["R_max"]), g, r["B"], ("%.2f" % r["elapsed_s"]).replace(".", ",")))
 print("  решение: %s%s\033[0m (код %s)" % (c, d, code))
 EOF
   sleep 2.5
 }
 say "SCII-гейт: прошивка ArduPilot Copter-4.5.7 для CubeOrange, порог θ = 0,496"
+say "s43. Испытание ArduCopter в SITL того же коммита: взлёт на 10 м в GUIDED и посадка в LAND"
+printf '\033[1;33m$ python testbed/sitl_smoke.py --binary sitl/arducopter --speedup 10\033[0m\n'
+$PY testbed/sitl_smoke.py --binary "$TB/products/sitl/arducopter" \
+    --defaults "$TB/ardupilot/Tools/autotest/default_params/copter.parm" --out /tmp/demo-sitl.json \
+    --workdir "$(mktemp -d)" 2>&1 | grep -v "Connection refused" | sed 's/^/  /'
+sleep 2
 say "B1. Цепочка поставщика с полным набором свидетельств стенда"
 run B1
 say "O1. Официальный выпуск firmware.ardupilot.org в опубликованном виде"

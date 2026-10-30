@@ -105,7 +105,8 @@ def main():
          "## 1. Условия", "",
          "| Параметр | Значение |", "|---|---|",
          "| Хост | %s, %s ядра, %s |" % (env["cpu"], env["nproc"], env["os"]),
-         "| Python | %s |" % env["python"], "| scii-gate | %s |" % env["scii_gate"], "| cosign | %s |" % env["cosign"],
+         "| Python | %s |" % env["python"], "| scii-gate | %s |" % env["scii_gate"],
+         "| cosign | %s |" % (env["cosign"] or "").replace("GitVersion:", "").strip(),
          "| GnuPG | %s |" % env["gpg"], "| Порог θ | %s |" % f3(res["theta"]), ""]
     L += ["SHA-256 файлов гейта и стенда на момент прогона:", "", "| Файл | SHA-256 |", "|---|---|"]
     L += ["| %s | `%s` |" % (k, v) for k, v in env["sha256"].items()]
@@ -122,13 +123,17 @@ def main():
         L += ["", "Возврат к исходному образу после вариантов нарушителя: " + "; ".join(bh["revert_checks"]) + "."]
     if sast:
         L += ["", "## 3. Свидетельства стенда", "",
-              "Статический анализ: %s %s, область %s, %d файлов, %d находок (по уровням %s), %s с." % (
+              "Статический анализ: %s %s, область %s, %d файлов, %d находок (уровни SARIF: %s), %s с." % (
                   sast["tool"]["name"], sast["tool"]["version"], ", ".join(sast["scope"]), sast["files_in_scope"],
-                  sast["findings_total"], json.dumps(sast["findings_by_level"], ensure_ascii=False), sast["wall_s"])]
+                  sast["findings_total"], ", ".join("%s %d" % kv for kv in sorted(sast["findings_by_level"].items())),
+                  str(sast["wall_s"]).replace(".", ","))]
     if tst:
         L += ["", "Испытание в SITL: результат %s, %s с, шаги: %s." % (
-            tst["result"], tst["wall_s"], ", ".join("%s (%s, %.1f с)" % (s["step"], "да" if s["ok"] else "нет", s["t_s"])
-                                                    for s in tst["steps"]))]
+            tst["result"], str(tst["wall_s"]).replace(".", ","),
+            ", ".join("%s (%s, %s с)" % (s["step"], "да" if s["ok"] else "нет", ("%.1f" % s["t_s"]).replace(".", ","))
+                      for s in tst["steps"])),
+              "", "Профиль высоты: results/sitl_altitude.png. Время шагов указано по часам стенда от запуска SITL, "
+              "симулятор работал с ускорением 10."]
     L += ["", "## 4. Решения гейта", "",
           "| Сценарий | Решение | Ожидалось | Совпало | R_P | R_P^min…R_P^max | R_P^+ | G_P | B_P | Код | Время, с |",
           "|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -144,7 +149,8 @@ def main():
             v = x["states"][s]
             cells.append(("**%s**" % v) if s in x["state_mismatches"] else v)
         L.append("| %s | %s |" % (x["id"], " | ".join(cells)))
-    L += ["", "Жирным выделены состояния, расходящиеся с планом."]
+    L += ["", "Расхождений состояний с планом нет (при расхождении состояние выделяется жирным)." if not any(
+        x["state_mismatches"] for x in sc) else "Жирным выделены состояния, расходящиеся с планом."]
     L += ["", "## 6. Причины опровержений", ""]
     for x in sc:
         fs = [(s, x["reasons"][s]) for s in ALL if x["states"][s] == "F"]

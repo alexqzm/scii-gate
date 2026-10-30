@@ -50,7 +50,7 @@ html,body{margin:0;background:#0d1117;height:100%%}
 #bar{font:600 17px 'DejaVu Sans',sans-serif;color:#c9d1d9;padding:10px 18px;border-bottom:1px solid #30363d;background:#161b22}
 #bar span{color:#8b949e;font-weight:400;margin-left:12px}
 #term{padding:10px 14px}</style></head><body>
-<div id="bar">%s<span>запись сеанса, воспроизведение с исходными интервалами (паузы &gt; %g с сокращены)</span></div>
+<div id="bar">%s<span>запись сеанса, паузы длиннее %g с сокращены</span></div>
 <div id="term"></div><script>%s</script><script>
 const data = Uint8Array.from(atob("%s"), c => c.charCodeAt(0));
 const timing = %s;
@@ -59,7 +59,7 @@ const term = new Terminal({cols: %d, rows: %d, fontSize: 14, fontFamily: "'DejaV
 term.open(document.getElementById('term'));
 let pos = 0, i = 0;
 function step() {
-  if (i >= timing.length) { setTimeout(() => { window.__done = true; }, 1500); return; }
+  if (i >= timing.length) { setTimeout(() => { window.__done = true; }, 4000); return; }
   const [d, n] = timing[i++];
   setTimeout(() => { term.write(data.subarray(pos, pos + n)); pos += n; step(); }, d * 1000);
 }

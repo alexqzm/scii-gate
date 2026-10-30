@@ -1,0 +1,13 @@
+diff --git a/ArduCopter/Parameters.cpp b/ArduCopter/Parameters.cpp
+index 7cccd21..ff4126b 100644
+--- a/ArduCopter/Parameters.cpp
++++ b/ArduCopter/Parameters.cpp
+@@ -1389,7 +1389,7 @@ void Copter::load_parameters(void)
+     AP_Param::convert_class(g.k_param_fence_old, &fence, fence.var_info, 0, 0, true);
+ #endif
+ 
+-    hal.console->printf("load_all took %uus\n", (unsigned)(micros() - before));
++    hal.console->printf("load_all took %uus [SCII-A3]\n", (unsigned)(micros() - before));
+ 
+     // setup AP_Param frame type flags
+     AP_Param::set_frame_type_flags(AP_PARAM_FRAME_COPTER);

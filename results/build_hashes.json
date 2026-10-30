@@ -1,0 +1,69 @@
+{
+ "builds": {
+  "plain-1": {
+   "what": "обычная сборка из тега, как официальный выпуск",
+   "bin_sha256": "8361119e33e88486bff1cedbaa30ad5334e887a83e91493a9529ca7c11ca9f4f",
+   "apj_sha256": "55ccf3e399d3edb9bf6e100306431f7c734b79ac475a07f327202e5dd55169aa",
+   "seconds": 378
+  },
+  "signed": {
+   "what": "сборка поставщика с --signed-fw",
+   "bin_sha256": "2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4",
+   "apj_sha256": "e20bff82bf97391069d6f4faa98f56f71faeab421aba30b1d8135a9a9b73cf2a",
+   "seconds": 378
+  },
+  "signed-r": {
+   "what": "повторная сборка поставщика в чистом каталоге (s23)",
+   "bin_sha256": "2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4",
+   "apj_sha256": "e20bff82bf97391069d6f4faa98f56f71faeab421aba30b1d8135a9a9b73cf2a",
+   "seconds": 397
+  },
+  "indep": {
+   "what": "независимая сборка в свежем клоне (s24)",
+   "bin_sha256": "2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4",
+   "apj_sha256": "e20bff82bf97391069d6f4faa98f56f71faeab421aba30b1d8135a9a9b73cf2a",
+   "seconds": 409
+  },
+  "A5": {
+   "what": "A5: внедрение на сборочном агенте, инкрементальная",
+   "bin_sha256": "00f948e40f048d46f954f85c3754e379dd0e5a8d024cf20265b0a0054cfbb815",
+   "apj_sha256": "0561fa34fe280a5c06cc4afe5f8c746bf5254c1509f4f9b19c595ce79e0dab84",
+   "seconds": 9
+  },
+  "A3": {
+   "what": "A3: архив исходников с изменённым файлом, инкрементальная",
+   "bin_sha256": "c9ce08cef6a70ca504504e1925bfb852357605379ba6283b33c135ce8c19ee88",
+   "apj_sha256": "e80e083d87e5d7002558de82408c45200b369f5242f30b68146a409c3eac3702",
+   "seconds": 11
+  },
+  "A7": {
+   "what": "A7: libcanard на подменённом коммите, инкрементальная",
+   "bin_sha256": "6c5163cf3e2be1e9cc303f384253c380cede1b9ee3f5c69d6c99d34450b5894d",
+   "apj_sha256": "7c91ddac9d622b58b93029e550ecb8c8c787c8ae338c0de3bdd7bc7ce7de4269",
+   "seconds": 10
+  },
+  "old": {
+   "what": "предыдущий выпуск Copter-4.5.5 с --signed-fw (A4)",
+   "bin_sha256": "3efe23dedb6ae37efaa69f5b86d63452d235eb0f88b33e060765a964c3bbc38f",
+   "apj_sha256": "22dd9143d0d77ee27b7baf340e1a40a504bac8277cb4f952ba62b345274ea3da",
+   "seconds": 389
+  }
+ },
+ "official": {
+  "apj_sha256": "55ccf3e399d3edb9bf6e100306431f7c734b79ac475a07f327202e5dd55169aa",
+  "image_sha256": "8361119e33e88486bff1cedbaa30ad5334e887a83e91493a9529ca7c11ca9f4f",
+  "image_size": 1820384,
+  "source": "https://firmware.ardupilot.org/Copter/stable-4.5.7/CubeOrange/arducopter.apj"
+ },
+ "revert_checks": [
+  "A5: возврат к исходному образу подтверждён",
+  "A3: возврат к исходному образу подтверждён",
+  "A7: возврат к исходному образу подтверждён"
+ ],
+ "comparisons": {
+  "plain-1 = официальный (apj)": true,
+  "plain-1 = официальный (образ)": true,
+  "signed = signed-r": true,
+  "signed = indep": true
+ }
+}

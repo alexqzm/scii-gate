@@ -1,0 +1,6 @@
+Tools/scripts/signing/make_secure_fw.py тега Copter-4.5.7 (git blob 8c8862cb62f8cbd99482f7933e7750d03f47037c), запуск 2026-10-30T12:22:38Z, Python Python 3.11.15:
+  File "/home/claude/tb/ardupilot/Tools/scripts/signing/make_secure_fw.py", line 18
+    return None
+    ^^^^^^^^^^^
+SyntaxError: 'return' outside function
+код возврата: 1
