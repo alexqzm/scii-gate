@@ -1,0 +1,56 @@
+{
+ "name": "Политика получателя стенда SCII после смены ключей поставщика (сценарий B5b)",
+ "comment": "Якоря доверия и ожидаемые значения задаёт получатель. Пути к ключам указаны относительно этого файла.",
+ "keys": {
+  "builder": "keys/builder.pub",
+  "independent_builder": "keys/independent_builder.pub",
+  "vendor": [
+   "keys/vendor.pub",
+   "keys/vendor2.pub"
+  ],
+  "repository": "keys/repository.pub",
+  "sast": "keys/sast.pub",
+  "tester": "keys/tester.pub",
+  "tag_signers": "keys/tag_signers.asc",
+  "secure_boot": [
+   "keys/secure_boot_vendor.dat",
+   "keys/secure_boot_vendor2.dat"
+  ]
+ },
+ "expect": {
+  "source_repository": "https://github.com/ArduPilot/ardupilot",
+  "source_commit": "2a3dc4b7bf2507120f7378a7b2fde73185e0c325",
+  "tag": "vendor/Copter-4.5.7",
+  "tag_signer_fingerprints": [
+   "0A1F1FBD6E2C056761880504D1E7BE7CEE2E3F84"
+  ],
+  "builder_id": "urn:scii:testbed:builder:v1",
+  "toolchain_sha256": "21134caa478bbf5352e239fbc6e2da3038f8d2207e089efc96c3b55f1edcd618",
+  "dependencies": {
+   "modules/ChibiOS": "6a85082c715457d1e0cc9627f9939f349de1143e",
+   "modules/CrashDebug": "599965086437137ec0fe66e185611f43f335f889",
+   "modules/CrashDebug/CrashCatcher": "4cf6e11df3a081b0f573a7834ed8e1e4000af73e",
+   "modules/CrashDebug/mri": "b35c89451b41a45b7f5b580acaff555315ac88e2",
+   "modules/DroneCAN/DSDL": "de93d9c8bb76de1b093050e3a31e4d4ce539c577",
+   "modules/DroneCAN/dronecan_dsdlc": "2465ace6c8cb0148e3ff5865aa9e4dd17d691a71",
+   "modules/DroneCAN/libcanard": "6f74bc67656882a4ee51966c7c0022d04fa1a3fb",
+   "modules/DroneCAN/pydronecan": "1f494e9a56ac9930f1e11c2f453789414b10d54e",
+   "modules/lwip": "143a6a5cb8023921b5dced55c30551ffb752b640",
+   "modules/mavlink": "2825252d6d13eb347520f028b3c580ab29bd78e5",
+   "modules/mavlink/pymavlink": "8ba67079211a4315681bc84a44c37b383448d664",
+   "modules/waf": "b25b5c7d98c502b07976740b0a65b9f39948c292",
+   "gcc-arm-none-eabi": "10-2020-q4-major"
+  },
+  "repository_writers": [
+   "builder"
+  ],
+  "device": {
+   "board_id": 140,
+   "installed_version": [
+    4,
+    5,
+    6
+   ]
+  }
+ }
+}

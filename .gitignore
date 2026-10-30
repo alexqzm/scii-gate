@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+# закрытые ключи и рабочие каталоги стенда лежат вне репозитория ($TB)
+*.key
+*_private_key.dat
