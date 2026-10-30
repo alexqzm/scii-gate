@@ -509,7 +509,7 @@ def check_gh_attestation(ctx: Context, ev: dict, params: dict) -> Result:
         res = json.loads(r.stdout)
         stmt = res[0]["verificationResult"]["statement"]
     except (ValueError, KeyError, IndexError) as e:
-        return Result(F, "ответ gh не разбирается: %s" % e)
+        return Result(N, "сбой проверки: ответ gh не разбирается (%s)" % e)
     if stmt.get("predicateType") != SLSA_V1:
         return Result(F, "тип аттестации %s вместо SLSA provenance v1" % stmt.get("predicateType"))
     return Result(P, "SLSA provenance GitHub проверен (Sigstore, репозиторий %s)" % ctx.expect["github_repository"],

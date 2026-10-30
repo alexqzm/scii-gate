@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "Если вы используете этот код или результаты стенда, сошлитесь на него так."
+title: "scii-gate: гейт допуска обновлений ПО киберфизических систем по графу доказательств"
+type: software
+version: 0.1.0
+date-released: 2026-10-30
+license: Apache-2.0
+authors:
+  - family-names: Kuzmin
+    given-names: Alexander
+keywords:
+  - software supply chain
+  - cyber-physical systems
+  - SLSA
+  - in-toto
+  - Sigstore
+  - ArduPilot

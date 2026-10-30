@@ -9,7 +9,7 @@
 set -euo pipefail
 TB=${TB:-/home/claude/tb}
 TAG=${TAG:-Copter-4.5.7}
-OLD_TAG=${OLD_TAG:-Copter-4.5.6}
+OLD_TAG=${OLD_TAG:-Copter-4.5.5}
 SRC=$TB/ardupilot
 TOOLCHAIN=$TB/toolchain/gcc-arm-none-eabi-10-2020-q4-major/bin
 export PATH=$TOOLCHAIN:$TB/py311/bin:$PATH

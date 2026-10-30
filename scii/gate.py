@@ -30,6 +30,8 @@ def to_markdown(profile: Profile, rep: dict) -> str:
     L = ["# SCII-гейт: решение о допуске", ""]
     if rep.get("artifact"):
         L += ["- Артефакт: `%s`" % rep["artifact"]["path"], "- SHA-256: `%s`" % rep["artifact"]["sha256"]]
+        if rep["artifact"].get("image_sha256"):
+            L.append("- SHA-256 образа сборки, восстановленного из пакета: `%s`" % rep["artifact"]["image_sha256"])
     L += ["- Профиль: %s" % profile.name, "- Порог θ = %s" % f3(rep["theta"]),
           "- **Решение: %s**" % rep["decision_detail"], ""]
     g = rep["G"]
@@ -85,7 +87,8 @@ def main(argv=None) -> int:
         res = run_checks(profile, ctx)
         states = {k: r.state for k, r in res.items()}
         reasons = {k: r.reason for k, r in res.items()}
-        artifact = {"path": ctx.bundle["artifact"], "sha256": ctx.artifact_sha256}
+        artifact = {"path": ctx.bundle["artifact"], "sha256": ctx.artifact_sha256,
+                    "image_sha256": ctx._image[1] if ctx._image else None}
     else:
         with open(a.states, encoding="utf-8") as f:
             states = json.load(f)

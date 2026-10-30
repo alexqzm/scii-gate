@@ -39,6 +39,7 @@ class Smoke:
     def __init__(self, a):
         self.a, self.steps, self.t0 = a, [], time.monotonic()
         self.max_alt = 0.0
+        self.track = []                      # (время, с; относительная высота, м; время автопилота, мс)
 
     def step(self, name, ok, **kw):
         rec = {"step": name, "ok": bool(ok), "t_s": round(time.monotonic() - self.t0, 2)}
@@ -55,7 +56,11 @@ class Smoke:
             if msg is None:
                 continue
             if msg.get_type() == "GLOBAL_POSITION_INT":
-                self.max_alt = max(self.max_alt, msg.relative_alt / 1000.0)
+                alt = msg.relative_alt / 1000.0
+                self.max_alt = max(self.max_alt, alt)
+                t = round(time.monotonic() - self.t0, 2)
+                if not self.track or msg.time_boot_ms - self.track[-1][2] >= 200:   # не чаще 5 Гц модельного времени
+                    self.track.append((t, round(alt, 2), msg.time_boot_ms))
             if pred(msg):
                 return msg
         return None
@@ -136,7 +141,7 @@ def main():
     started = now()
     result = s.run()
     rep = {"result": result, "startedOn": started, "finishedOn": now(), "steps": s.steps,
-           "wall_s": round(time.monotonic() - s.t0, 2),
+           "wall_s": round(time.monotonic() - s.t0, 2), "track": s.track,
            "configuration": {"binary": os.path.basename(a.binary), "binary_sha256": sha256(a.binary),
                              "defaults": a.defaults, "defaults_sha256": sha256(a.defaults),
                              "model": "+", "speedup": a.speedup, "takeoff_alt_m": a.alt}}

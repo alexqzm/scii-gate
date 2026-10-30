@@ -1,0 +1,131 @@
+# Сборка ArduPilot Copter-4.5.7 (CubeOrange) на раннере GitHub, сверка с официальным образом и стендом,
+# бесключевая аттестация происхождения (Sigstore, OIDC GitHub) и решение гейта по ней.
+# Запуск вручную: Actions -> build-attest -> Run workflow. Аттестации доступны только в публичном репозитории
+# (тарифы Free, Pro, Team).
+name: build-attest
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AP_TAG: Copter-4.5.7
+  AP_COMMIT: 2a3dc4b7bf2507120f7378a7b2fde73185e0c325
+  TOOLCHAIN_URL: https://firmware.ardupilot.org/Tools/STM32-tools/gcc-arm-none-eabi-10-2020-q4-major-x86_64-linux.tar.bz2
+  TOOLCHAIN_SHA256: 21134caa478bbf5352e239fbc6e2da3038f8d2207e089efc96c3b55f1edcd618
+  # измерено: официальный выпуск firmware.ardupilot.org и сборки стенда (results/build_hashes.json)
+  OFFICIAL_APJ_SHA256: 55ccf3e399d3edb9bf6e100306431f7c734b79ac475a07f327202e5dd55169aa
+  OFFICIAL_IMAGE_SHA256: 8361119e33e88486bff1cedbaa30ad5334e887a83e91493a9529ca7c11ca9f4f
+  TESTBED_SIGNED_IMAGE_SHA256: 2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write       # сертификат Sigstore по OIDC-токену
+      attestations: write   # запись аттестации в репозиторий
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Исходники ArduPilot по тегу, проверка коммита
+        run: |
+          git clone -q --depth 1 --branch "$AP_TAG" https://github.com/ArduPilot/ardupilot.git ap
+          test "$(git -C ap rev-parse HEAD)" = "$AP_COMMIT"
+          cd ap
+          git submodule update -q --init --depth 1 modules/waf modules/mavlink modules/ChibiOS \
+            modules/DroneCAN/DSDL modules/DroneCAN/pydronecan modules/DroneCAN/dronecan_dsdlc \
+            modules/DroneCAN/libcanard modules/lwip
+          git submodule update -q --init --recursive --depth 1 modules/CrashDebug
+          git submodule status --recursive
+
+      - name: Тулчейн с проверкой SHA-256
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/tc.tar.bz2" "$TOOLCHAIN_URL"
+          echo "$TOOLCHAIN_SHA256  $RUNNER_TEMP/tc.tar.bz2" | sha256sum -c -
+          tar xjf "$RUNNER_TEMP/tc.tar.bz2" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/gcc-arm-none-eabi-10-2020-q4-major/bin" >> "$GITHUB_PATH"
+
+      - name: Зависимости сборки (версии и хэши закреплены)
+        run: python -m pip install --require-hashes -r ci/requirements-ardupilot.txt
+
+      - name: Обычная сборка (как официальный выпуск)
+        working-directory: ap
+        run: |
+          ./waf configure --board CubeOrange > /dev/null
+          SECONDS=0; ./waf copter -j "$(nproc)" > ../build-plain.log 2>&1; echo "plain: ${SECONDS}s, $(nproc) ядра"
+
+      - name: Сборка с подписываемым дескриптором (как у поставщика на стенде)
+        working-directory: ap
+        run: |
+          ./waf configure --board CubeOrange --signed-fw --out build-signed > /dev/null
+          SECONDS=0; ./waf copter --out build-signed -j "$(nproc)" > ../build-signed.log 2>&1; echo "signed: ${SECONDS}s"
+
+      - name: Сверка дайджестов с официальным выпуском и стендом
+        run: |
+          python - <<'EOF'
+          import base64, hashlib, json, os, zlib
+          h = lambda b: hashlib.sha256(b).hexdigest()
+          f = lambda p: open(p, "rb").read()
+          apj = "ap/build/CubeOrange/bin/arducopter.apj"
+          img = zlib.decompress(base64.b64decode(json.load(open(apj))["image"]))
+          rows = [("обычная сборка, apj", h(f(apj)), os.environ["OFFICIAL_APJ_SHA256"]),
+                  ("обычная сборка, образ", h(img), os.environ["OFFICIAL_IMAGE_SHA256"]),
+                  ("сборка --signed-fw, образ", h(f("ap/build-signed/CubeOrange/bin/arducopter.bin")),
+                   os.environ["TESTBED_SIGNED_IMAGE_SHA256"])]
+          res = [{"what": w, "github": a, "reference": b, "match": a == b} for w, a, b in rows]
+          json.dump(res, open("repro.json", "w"), ensure_ascii=False, indent=1)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as s:
+              s.write("### Воспроизводимость на раннере GitHub\n\n| Что | SHA-256 здесь | Эталон | Совпало |\n|---|---|---|---|\n")
+              for r in res:
+                  s.write("| %s | `%s…` | `%s…` | %s |\n" % (r["what"], r["github"][:16], r["reference"][:16],
+                                                       "да" if r["match"] else "нет"))
+          print(json.dumps(res, ensure_ascii=False, indent=1))
+          EOF
+
+      - name: Аттестация происхождения (SLSA v1, Sigstore)
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: |
+            ap/build-signed/CubeOrange/bin/arducopter.bin
+            ap/build/CubeOrange/bin/arducopter.apj
+          create-storage-record: false
+
+      - name: Проверка аттестации (gh attestation verify)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify ap/build-signed/CubeOrange/bin/arducopter.bin -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-attest.yml" --format json > verify.json
+          python -c "import json; r=json.load(open('verify.json')); print(r[0]['verificationResult']['statement']['predicateType'])"
+
+      - name: Решение гейта по свидетельствам из CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python testbed/ci_gate.py --apj ap/build-signed/CubeOrange/bin/arducopter.apj --out ci-gate \
+            --repository "$GITHUB_REPOSITORY" --commit "$AP_COMMIT"
+          cat ci-gate/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: ardupilot-${{ env.AP_TAG }}-CubeOrange
+          path: |
+            ap/build/CubeOrange/bin/arducopter.apj
+            ap/build-signed/CubeOrange/bin/arducopter.bin
+            ap/build-signed/CubeOrange/bin/arducopter.apj
+            repro.json
+            verify.json
+            ${{ steps.attest.outputs.bundle-path }}
+            ci-gate/
+            build-*.log

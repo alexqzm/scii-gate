@@ -55,6 +55,10 @@ T_TEST = "https://in-toto.io/attestation/test-result/v0.1"
 T_SAST = "urn:scii:predicate:sast:v1"
 T_REBUILD = "urn:scii:predicate:rebuild:v1"
 CONFIGURE = ["./waf", "configure", "--board", "CubeOrange", "--signed-fw"]
+# Сценарий подписи из тега Copter-4.5.7 не запускается в Python 3 (SyntaxError: 'return' outside function,
+# строка 18). Используется тот же сценарий из ветки master (коммит 278a68a5, git blob f72cfdf3), где ошибка
+# исправлена, а алгоритм подписи не изменился. testbed/setup.sh скачивает его и сверяет blob.
+MAKE_SECURE_FW = os.environ.get("MAKE_SECURE_FW", os.path.join(TB, "tools", "make_secure_fw.py"))
 
 
 # ---------------- помощники ----------------
@@ -128,7 +132,7 @@ def signed_tag(repo, name, commit, signer, message):
     env = dict(os.environ, GNUPGHOME=GNUPGHOME)
     tmp = "refs/tags/" + name
     git(repo, "-c", "user.name=SCII testbed %s" % signer, "-c", "user.email=%s@scii-testbed.invalid" % signer,
-        "-c", "user.signingkey=%s" % fpr(signer), "-c", "gpg.program=gpg",
+        "-c", "user.signingkey=%s" % fpr(signer), "-c", "gpg.format=openpgp", "-c", "gpg.program=gpg",
         "tag", "-s", "-f", "-m", message, name, commit, env=env)
     obj = git(repo, "cat-file", "tag", tmp, raw=True)
     git(repo, "tag", "-d", name)
@@ -246,7 +250,7 @@ def source_evidence(dst, repo, tag, signer="vendor", with_sast=True, with_tests=
         assert rep["source"]["commit"] == commit
         attest("sast", T_SAST, rep, blob, os.path.join(sd, "sast.intoto.json"))
         ev["s13"] = {"subject": "source/commit.txt", "attestation": "source/sast.intoto.json"}
-    if with_tests:
+    if with_tests and os.environ.get("SCII_DEBUG_NO_TESTS") != "1":   # отладка цепочек до SITL-испытания
         t = rjson(os.path.join(WORK, "tests", "sitl_smoke.json"))
         steps = [s["step"] for s in t["steps"]]
         pred = {"result": t["result"],
@@ -374,8 +378,7 @@ def package(dst, product, sb_key="vendor", cosign_role="vendor", apj_src=None):
     os.makedirs(pd, exist_ok=True)
     apj = os.path.join(pd, "arducopter.apj")
     shutil.copy(apj_src or os.path.join(PRODUCTS, product, "arducopter.apj"), apj)
-    run([PY, os.path.join(SRC, "Tools", "scripts", "signing", "make_secure_fw.py"), apj,
-         os.path.join(PRIV, "%s_private_key.dat" % sb_key)])
+    run([PY, MAKE_SECURE_FW, apj, os.path.join(PRIV, "%s_private_key.dat" % sb_key)])
     sign_blob(cosign_role, apj, apj + ".sigstore.json")
     return {"s42": {"signature": "package/arducopter.apj.sigstore.json"}}
 
@@ -527,6 +530,7 @@ def chain_official():
             "result": "MATCH" if rebuilt == sha256(cand) else "MISMATCH"}
     attest("independent_builder", T_REBUILD, pred, cand, os.path.join(bd, "rebuild-independent.intoto.json"))
     os.unlink(cand)
+    ev["s24"] = {"attestation": "build/rebuild-independent.intoto.json"}
     finish(dst, ev, "official", {"commit": commit, "rebuild_s24": "build/rebuild-independent.intoto.json",
                                  "rebuild_result": pred["result"], "official_apj_sha256": sha256(off_apj)},
            "arducopter.bin")
