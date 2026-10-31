@@ -113,6 +113,12 @@ scii-gate verify --profile profiles/ardupilot_cubeorange.json \
 
 Нужны cosign 2.4.1, GnuPG и pymonocypher 3.1.3.2. Тест `tests/test_data_bundles.py` повторяет решения гейта по всем 16 комплектам из `data/bundles` и сверяет их с `results/results.json`.
 
+Расчёты статьи о методе, включая таблицу записей реальной цепочки, пересчитывает отдельный пакет без сторонних зависимостей ([paper/evidence-graph-method](paper/evidence-graph-method/README.md)):
+
+```bash
+python3 paper/evidence-graph-method/scii_repro.py --check
+```
+
 Ссылка для цитирования: DOI [10.5281/zenodo.23833592](https://doi.org/10.5281/zenodo.23833592) (все версии), см. также [CITATION.cff](CITATION.cff).
 
 ## Стенд ArduPilot
@@ -174,6 +180,7 @@ gh attestation verify arducopter.bin -R alexqzm/scii-gate \
 | `scii/checks.py` | проверки свидетельств: подписи git, теги, аттестации in-toto, SLSA, SBOM, журнал хранилища, cosign, защищённая загрузка ArduPilot, версия, плата, аттестации GitHub |
 | `scii/gate.py` | командная строка `scii-gate` |
 | `profiles/` | профиль примера статьи и профиль стенда |
+| `paper/evidence-graph-method/` | пересчёт всех чисел статьи о методе, в том числе записей реальной цепочки (табл. 5) |
 | `testbed/` | сборки, ключи, конвейер поставщика и нарушителя, сценарии, политика получателя |
 | `docs/` | ПМИ, протокол испытаний |
 | `results/` | результаты прогона: results.json, отчёты гейта по сценариям, данные CI |
