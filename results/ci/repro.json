@@ -1,0 +1,20 @@
+[
+ {
+  "what": "обычная сборка, apj",
+  "github": "55ccf3e399d3edb9bf6e100306431f7c734b79ac475a07f327202e5dd55169aa",
+  "reference": "55ccf3e399d3edb9bf6e100306431f7c734b79ac475a07f327202e5dd55169aa",
+  "match": true
+ },
+ {
+  "what": "обычная сборка, образ",
+  "github": "8361119e33e88486bff1cedbaa30ad5334e887a83e91493a9529ca7c11ca9f4f",
+  "reference": "8361119e33e88486bff1cedbaa30ad5334e887a83e91493a9529ca7c11ca9f4f",
+  "match": true
+ },
+ {
+  "what": "сборка --signed-fw, образ",
+  "github": "2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4",
+  "reference": "2fc031969854a4429f85f4f7d0fdb6502bd02f44dcd393a65e30abe6913477c4",
+  "match": true
+ }
+]

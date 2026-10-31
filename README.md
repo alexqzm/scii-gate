@@ -1,5 +1,8 @@
 # scii-gate
 
+[![tests](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml/badge.svg)](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml)
+[![build-attest](https://github.com/alexqzm/scii-gate/actions/workflows/build-attest.yml/badge.svg)](https://github.com/alexqzm/scii-gate/actions/workflows/build-attest.yml)
+
 Гейт допуска обновлений программного обеспечения киберфизических систем по графу доказательств целостности цепочки сборки и обновления (метод SCII). Репозиторий содержит реализацию метода, профиль политики, стенд на реальной цепочке ArduPilot и результаты испытаний.
 
 Метод и формулы описаны в статье «Метод оценки целостности цепочки сборки и обновления программного обеспечения на основе графа доказательств» (журнал «Вопросы кибербезопасности», в редакции) [уточнить: выходные данные после публикации].
@@ -75,6 +78,13 @@ python testbed/scenarios.py run               # прогон 16 сценарие
 2. К выпуску не опубликованы подписи, SBOM и provenance. Коммит тега не подписан, тег лёгкий. Официальный образ без подписываемого дескриптора.
 3. В подписанном образе ArduCopter поля версии дескриптора равны 0.0, загрузчик версию не сравнивает. Защиту от отката даёт только гейт.
 4. Сценарий подписи `Tools/scripts/signing/make_secure_fw.py` в теге Copter-4.5.7 не запускается (SyntaxError), в ветке master исправлен.
+
+5. На раннере GitHub (31.10.2026, workflow build-attest) обе сборки дали те же образы, что официальный выпуск и стенд. Образ 2fc03196… и apj 55ccf3e3… получили аттестацию происхождения SLSA v1 через Sigstore ([аттестация](https://github.com/alexqzm/scii-gate/attestations/62078881), Rekor logIndex 3612550422). Проверить локальный файл:
+
+```bash
+gh attestation verify arducopter.bin -R alexqzm/scii-gate \
+   --signer-workflow alexqzm/scii-gate/.github/workflows/build-attest.yml
+```
 
 ![Профиль высоты SITL-испытания](results/sitl_altitude.png)
 
