@@ -1,0 +1,56 @@
+{
+ "scenario": "A5a",
+ "artifact": "package/arducopter.apj",
+ "build_product_name": "arducopter-Copter-4.5.7-CubeOrange.bin",
+ "evidence": {
+  "s11": {
+   "commit_object": "source/commit_object"
+  },
+  "s14": {
+   "tag_object": "source/tag_object"
+  },
+  "s13": {
+   "subject": "source/commit.txt",
+   "attestation": "source/sast.intoto.json"
+  },
+  "s43": {
+   "subject": "source/commit.txt",
+   "attestation": "source/tests.intoto.json"
+  },
+  "s21": {
+   "attestation": "build/link.intoto.json"
+  },
+  "s22": {
+   "attestation": "build/provenance.intoto.json"
+  },
+  "s41": {
+   "attestation": "build/sbom.intoto.json"
+  },
+  "s23": {
+   "attestation": "build/repro.intoto.json"
+  },
+  "s24": {
+   "attestation": "build/rebuild-independent.intoto.json"
+  },
+  "s31": {
+   "log": "repository/log.jsonl",
+   "signature": "repository/log.sigstore.json"
+  },
+  "s32": {
+   "log": "repository/log.jsonl",
+   "signature": "repository/log.sigstore.json"
+  },
+  "s42": {
+   "signature": "package/arducopter.apj.sigstore.json"
+  },
+  "s51": {
+   "embedded": true
+  },
+  "s52": {
+   "embedded": true
+  },
+  "s53": {
+   "embedded": true
+  }
+ }
+}

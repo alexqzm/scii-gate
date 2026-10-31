@@ -1,0 +1,19 @@
+{
+ "scenario": "O1",
+ "artifact": "package/arducopter.apj",
+ "build_product_name": "arducopter.bin",
+ "evidence": {
+  "s11": {
+   "commit_object": "source/commit_object"
+  },
+  "s51": {
+   "embedded": true
+  },
+  "s52": {
+   "embedded": true
+  },
+  "s53": {
+   "embedded": true
+  }
+ }
+}

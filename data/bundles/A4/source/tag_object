@@ -1,0 +1,13 @@
+object 142aece2da56146d94dcad0f6b539af6960538f6
+type commit
+tag vendor/Copter-4.5.5
+tagger SCII testbed vendor <vendor@scii-testbed.invalid> 1793363794 +0300
+
+Выпуск поставщика Copter-4.5.5 для CubeOrange (стенд SCII)
+-----BEGIN PGP SIGNATURE-----
+
+iHUEABYKAB0WIQQKHx+9biwFZ2GIBQTR57587i4/hAUCauSPUgAKCRDR57587i4/
+hL8nAQCjmO//wkeopEinTqgkK8Wufrsz5zsbZn098LD1ziNCKQEAyKTplrt7LJUx
+pyFAwDVa59KykV4ALBmuZdwBDkE7VQ8=
+=KqEQ
+-----END PGP SIGNATURE-----
