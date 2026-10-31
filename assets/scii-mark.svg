@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="273 318 337 337" width="337" height="337" role="img" aria-labelledby="scii-title">
+  <title id="scii-title">SCII, знак</title>
+  <defs><linearGradient id="scii-d1" gradientUnits="userSpaceOnUse" x1="300" y1="430" x2="460" y2="506"><stop offset="0" stop-color="#00325B"/><stop offset="1" stop-color="#003F68"/></linearGradient></defs>
+  <g id="mark">
+    <g fill="none" stroke="#012450" stroke-width="16.6"><line x1="313" y1="414.86" x2="441.85" y2="347.95"/><line x1="441.85" y1="347.04" x2="567.94" y2="418.1"/><line x1="321.68" y1="554.71" x2="441.83" y2="622.21"/><line x1="441.83" y1="621.74" x2="566" y2="553.79"/></g>
+    <path fill="url(#scii-d1)" d="M 299 414 A 13 13 0 0 1 312 401 L 327 401 L 327 434.84 L 461.5 497.89 L 443.12 516.27 L 304.76 451.42 A 10 10 0 0 1 299 442.36 Z"/>
+    <path fill="#01A4A4" d="M 461.5 458.6 L 580.18 516.93 A 14 14 0 0 1 588 529.49 L 588 549 A 17 17 0 0 1 571 566 L 555 566 A 10 10 0 0 1 545 556 L 545 525.64 L 440 474.03 Z"/>
+    <g fill="#012450"><circle cx="441.85" cy="352.87" r="26.8"/><circle cx="567.94" cy="423.52" r="26.8"/><circle cx="321.68" cy="551.9" r="26.8"/><circle cx="441.83" cy="619.95" r="26.8"/></g>
+  </g>
+</svg>
