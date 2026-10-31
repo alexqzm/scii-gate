@@ -9,6 +9,7 @@ repository-code: "https://github.com/alexqzm/scii-gate"
 authors:
   - family-names: Kuzmin
     given-names: Alexander
+    orcid: "https://orcid.org/0000-0002-0393-412X"
 keywords:
   - software supply chain
   - cyber-physical systems

@@ -5,7 +5,10 @@
   "language": "rus",
   "license": "Apache-2.0",
   "creators": [
-    {"name": "Kuzmin, Alexander"}
+    {
+      "name": "Kuzmin, Alexander",
+      "orcid": "0000-0002-0393-412X"
+    }
   ],
   "description": "<p>Реализация метода оценки целостности цепочки сборки и обновления программного обеспечения киберфизических систем на основе графа доказательств (SCII) и стенд для его испытаний на реальной цепочке ArduPilot Copter-4.5.7 для полётного контроллера CubeOrange.</p><p>Состав: гейт допуска (модель, проверки свидетельств: подписи git и тегов, аттестации in-toto и SLSA, SBOM CycloneDX, журнал хранилища, подпись пакета, защищённая загрузка ArduPilot, защита от отката, привязка к плате, аттестации GitHub), профиль политики, конвейер поставщика и нарушителя, программа и методика испытаний (зафиксирована до прогона), протокол испытаний, результаты 16 сценариев, комплекты свидетельств для повторной проверки, видео сеанса, CI с бесключевой аттестацией происхождения.</p><p>Решения гейта совпали с планом ПМИ в 16 сценариях из 16, состояния свидетельств в 272 парах из 272. Пакеты .apj в каталоге data/bundles содержат прошивку ArduPilot (GPLv3).</p>",
   "keywords": [
@@ -21,6 +24,11 @@
     "reproducible builds"
   ],
   "related_identifiers": [
-    {"identifier": "https://github.com/alexqzm/scii-gate", "relation": "isSupplementTo", "resource_type": "software", "scheme": "url"}
+    {
+      "identifier": "https://github.com/alexqzm/scii-gate",
+      "relation": "isSupplementTo",
+      "resource_type": "software",
+      "scheme": "url"
+    }
   ]
 }
