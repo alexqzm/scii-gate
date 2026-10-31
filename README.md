@@ -1,6 +1,7 @@
 # scii-gate
 
 [![tests](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml/badge.svg)](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23833592.svg)](https://doi.org/10.5281/zenodo.23833592)
 [![build-attest](https://github.com/alexqzm/scii-gate/actions/workflows/build-attest.yml/badge.svg)](https://github.com/alexqzm/scii-gate/actions/workflows/build-attest.yml)
 
 Гейт допуска обновлений программного обеспечения киберфизических систем по графу доказательств целостности цепочки сборки и обновления (метод SCII). Репозиторий содержит реализацию метода, профиль политики, стенд на реальной цепочке ArduPilot и результаты испытаний.
@@ -35,7 +36,9 @@ scii-gate verify --profile profiles/ardupilot_cubeorange.json \
                  --policy testbed/policy/policy.json --bundle <каталог комплекта> --md report.md
 ```
 
-Нужны cosign 2.4.1, GnuPG и pymonocypher 3.1.3.2.
+Нужны cosign 2.4.1, GnuPG и pymonocypher 3.1.3.2. Тест `tests/test_data_bundles.py` повторяет решения гейта по всем 16 комплектам из `data/bundles` и сверяет их с `results/results.json`.
+
+Ссылка для цитирования: DOI [10.5281/zenodo.23833592](https://doi.org/10.5281/zenodo.23833592) (все версии), см. также [CITATION.cff](CITATION.cff).
 
 ## Стенд ArduPilot
 
