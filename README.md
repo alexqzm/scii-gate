@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/scii-logo-dark.png">
+    <img src="assets/scii-logo.png" alt="Логотип SCII" width="420">
+  </picture>
+</p>
+
 # scii-gate
 
 [![tests](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml/badge.svg)](https://github.com/alexqzm/scii-gate/actions/workflows/tests.yml)
@@ -172,6 +179,7 @@ gh attestation verify arducopter.bin -R alexqzm/scii-gate \
 | `results/` | результаты прогона: results.json, отчёты гейта по сценариям, данные CI |
 | `data/` | 16 комплектов свидетельств официального прогона и отчёт статического анализа |
 | `.github/workflows/` | тесты и сборка с бесключевой аттестацией происхождения на GitHub |
+| `assets/` | логотип проекта (для светлой и тёмной темы, исходный файл), изображение для превью репозитория |
 
 ## Лицензия
 
