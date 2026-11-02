@@ -1,7 +1,7 @@
 {
   "title": "scii-gate: гейт допуска обновлений ПО киберфизических систем по графу доказательств и стенд ArduPilot",
   "upload_type": "software",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "language": "rus",
   "license": "Apache-2.0",
   "creators": [

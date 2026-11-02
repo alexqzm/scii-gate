@@ -105,7 +105,7 @@ scii-gate evaluate --profile profiles/vak2_example.json --states tests/states_va
 scii-gate evaluate --profile profiles/vak2_example.json --states tests/states_vak2_scenario1.json --uncertainty box
 ```
 
-Индекс вычисляется за время O(|V| + |E|): входящие рёбра каждой вершины хранятся списком, вес каждого ребра читается за проход один раз. Замер на цепях и разветвлённых графах до 300 тыс. вершин без проверки подписей: `python3 bench/scaling.py`, результаты в [results/scaling/scaling.md](results/scaling/scaling.md).
+Индекс вычисляется за время O(|V| + |E|): входящие рёбра каждой вершины хранятся списком, вес каждого ребра читается за проход один раз. Замер прохода, границ индекса и всего правила (4) на цепях и разветвлённых графах до 300 тыс. вершин без проверки подписей: `python3 bench/scaling.py`, результаты в [results/scaling/scaling.md](results/scaling/scaling.md).
 
 Проверка реального комплекта:
 
