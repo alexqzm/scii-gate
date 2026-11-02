@@ -2,9 +2,9 @@ cff-version: 1.2.0
 message: "Если вы используете этот код или результаты стенда, сошлитесь на него так."
 title: "scii-gate: гейт допуска обновлений ПО киберфизических систем по графу доказательств"
 type: software
-version: 0.1.2
+version: 0.1.3
 doi: 10.5281/zenodo.23833592
-date-released: 2026-10-31
+date-released: 2026-11-02
 license: Apache-2.0
 repository-code: "https://github.com/alexqzm/scii-gate"
 authors:

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
@@ -23,6 +24,7 @@ P, N, F = "P", "N", "F"            # подтверждено (a=1, z=1), отс
 STATE_NAME = {P: "подтверждено", N: "отсутствует", F: "опровергнуто"}
 BOTTOM = "⊥"
 ADMIT, REVIEW, REQUEST, REJECT = "допуск", "ручное рассмотрение", "запрос свидетельств", "отказ"
+NEIGHBORHOOD, BOX = "neighborhood", "box"    # множество весов в правиле (4): окрестность N(w) или ящик классов B(w)
 DECISION_ORDER = {REJECT: 0, REVIEW: 1, ADMIT: 2}
 
 
@@ -44,20 +46,22 @@ class Vertex:
 
 
 def _topological(ids: List[str], edges: List[Tuple[str, str]]) -> List[str]:
+    """Обход Кана по спискам смежности за O(|V| + |E|). Порядок обхода тот же, что у прямого перебора рёбер."""
     indeg = {v: 0 for v in ids}
+    succ: Dict[str, List[str]] = {v: [] for v in ids}
     for u, v in edges:
         if u not in indeg or v not in indeg:
             raise ValueError("ребро (%s, %s) ссылается на неизвестную вершину" % (u, v))
         indeg[v] += 1
-    order, ready = [], [v for v in ids if indeg[v] == 0]
+        succ[u].append(v)
+    order, ready = [], deque(v for v in ids if indeg[v] == 0)
     while ready:
-        u = ready.pop(0)
+        u = ready.popleft()
         order.append(u)
-        for a, b in edges:
-            if a == u:
-                indeg[b] -= 1
-                if indeg[b] == 0:
-                    ready.append(b)
+        for b in succ[u]:
+            indeg[b] -= 1
+            if indeg[b] == 0:
+                ready.append(b)
     if len(order) != len(ids):
         raise ValueError("граф содержит цикл")
     return order
@@ -81,10 +85,19 @@ class Profile:
             if c not in self.class_codes:
                 raise ValueError("неизвестный класс ребра %s: %s" % (e, c))
         self.order = _topological(ids, self.edges)
-        sinks = [v for v in ids if not any(u == v for u, _ in self.edges)]
+        # входящие рёбра каждой вершины в порядке профиля: рекурсия (2) просматривает каждое ребро один раз
+        self.preds: Dict[str, List[str]] = {v: [] for v in ids}
+        outdeg = {v: 0 for v in ids}
+        for u, v in self.edges:
+            self.preds[v].append(u)
+            outdeg[u] += 1
+        sinks = [v for v in ids if outdeg[v] == 0]
         if len(sinks) != 1:
             raise ValueError("граф должен иметь единственный сток (конечный артефакт), найдено %d" % len(sinks))
         self.root = sinks[0]
+        self.uncertainty = data.get("uncertainty", NEIGHBORHOOD)
+        if self.uncertainty not in (NEIGHBORHOOD, BOX):
+            raise ValueError("uncertainty должно быть %s или %s" % (NEIGHBORHOOD, BOX))
         self.catalog: Dict[str, List[EvidenceType]] = {}
         self.evidence: Dict[str, EvidenceType] = {}
         for v in ids:
@@ -138,7 +151,9 @@ class Profile:
         return out
 
     def box_corners(self) -> Tuple[Dict, Dict]:
-        """Угловые наборы «ящика»: классы всех рёбер на шаг выше (худший) и на шаг ниже (лучший)."""
+        """Угловые наборы ящика классов B(w): классы всех рёбер на шаг выше (худший) и на шаг ниже (лучший).
+        Индекс не возрастает по весу каждого ребра, поэтому на B(w) его минимум и максимум достигаются в этих
+        двух наборах."""
         up, down = {}, {}
         for e in self.edges:
             c = self.edge_class[e]
@@ -166,13 +181,12 @@ def labels(profile: Profile, states: Dict[str, str], upper: bool = False,
 
 
 def index(profile: Profile, lab: Dict[str, float], w: Dict[Tuple[str, str], float]) -> Tuple[float, Dict[str, float]]:
-    """(2): рекурсия по топологическому порядку; возвращает R_P(A) и оценки всех вершин."""
+    """(2): рекурсия по топологическому порядку за O(|V| + |E|); возвращает R_P(A) и оценки всех вершин."""
     r = {}
     for v in profile.order:
         x = lab[v]
-        for (u, t) in profile.edges:
-            if t == v:
-                x *= 1.0 - w[(u, t)] * (1.0 - r[u])
+        for u in profile.preds[v]:
+            x *= 1.0 - w[(u, v)] * (1.0 - r[u])
         r[v] = x
     return r[profile.root], r
 
@@ -200,17 +214,32 @@ def binary(profile: Profile, states: Dict[str, str]) -> int:
 
 
 def interval(profile: Profile, states: Dict[str, str], alpha=None) -> Tuple[float, float]:
-    vals = [R(profile, states, w, alpha=alpha) for w in profile.neighborhood()]
+    """R_P^min и R_P^max на окрестности N(w): не более 2|E| + 1 проходов рекурсии."""
+    lab = {v: x["l"] for v, x in labels(profile, states, alpha=alpha).items()}
+    vals = [index(profile, lab, w)[0] for w in profile.neighborhood()]
     return min(vals), max(vals)
 
 
-def decide(profile: Profile, states: Dict[str, str], theta: Optional[float] = None, alpha=None) -> str:
-    """(4): условия проверяются по порядку."""
+def interval_box(profile: Profile, states: Dict[str, str], alpha=None) -> Tuple[float, float]:
+    """R_P^min и R_P^max на ящике классов B(w): два прохода рекурсии, O(|V| + |E|)."""
+    lab = {v: x["l"] for v, x in labels(profile, states, alpha=alpha).items()}
+    up, down = profile.box_corners()
+    return index(profile, lab, up)[0], index(profile, lab, down)[0]
+
+
+def bounds(profile: Profile, states: Dict[str, str], alpha=None, uncertainty: Optional[str] = None) -> Tuple[float, float]:
+    unc = uncertainty or profile.uncertainty
+    return interval_box(profile, states, alpha) if unc == BOX else interval(profile, states, alpha)
+
+
+def decide(profile: Profile, states: Dict[str, str], theta: Optional[float] = None, alpha=None,
+           uncertainty: Optional[str] = None) -> str:
+    """(4): условия проверяются по порядку. uncertainty выбирает N(w) (по умолчанию) или ящик B(w)."""
     theta = profile.theta if theta is None else theta
     g = gate(profile, states)
     if g == BOTTOM:
         return REQUEST
-    rmin, rmax = interval(profile, states, alpha)
+    rmin, rmax = bounds(profile, states, alpha, uncertainty)
     if g == 0 or rmax < theta:
         return REJECT
     if binary(profile, states) == 1 and rmin >= theta:
@@ -218,15 +247,16 @@ def decide(profile: Profile, states: Dict[str, str], theta: Optional[float] = No
     return REVIEW
 
 
-def evaluate(profile: Profile, states: Dict[str, str], theta: Optional[float] = None) -> dict:
+def evaluate(profile: Profile, states: Dict[str, str], theta: Optional[float] = None,
+             uncertainty: Optional[str] = None) -> dict:
     """Полный расчёт для отчёта: метки, оценки вершин, R, R_min, R_max, R+, ящик, G, B, решение."""
     theta = profile.theta if theta is None else theta
+    unc = uncertainty or profile.uncertainty
     lab = labels(profile, states)
     r_root, r = index(profile, {v: x["l"] for v, x in lab.items()}, profile.weights())
-    rmin, rmax = interval(profile, states)
-    up, down = profile.box_corners()
+    rmin, rmax = bounds(profile, states, uncertainty=unc)
     g = gate(profile, states)
-    dec = decide(profile, states, theta)
+    dec = decide(profile, states, theta, uncertainty=unc)
     detail = dec
     if dec == REJECT and g == 0:
         detail = "отказ (вето)"
@@ -240,7 +270,8 @@ def evaluate(profile: Profile, states: Dict[str, str], theta: Optional[float] = 
         "R_min": rmin,
         "R_max": rmax,
         "R_plus": R(profile, states, upper=True),
-        "R_box": [R(profile, states, up), R(profile, states, down)],
+        "R_box": list(interval_box(profile, states)),
+        "uncertainty": unc,
         "G": g,
         "B": binary(profile, states),
         "decision": dec,

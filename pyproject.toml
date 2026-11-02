@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scii-gate"
-version = "0.1.0"
+version = "0.1.3"
 description = "Гейт допуска обновлений ПО КФС по графу доказательств целостности цепочки сборки (метод SCII)"
 readme = "README.md"
 license = {text = "Apache-2.0"}

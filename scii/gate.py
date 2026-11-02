@@ -3,6 +3,7 @@
 
   scii-gate verify   --profile P.json --policy policy.json --bundle DIR [--json out.json] [--md out.md]
   scii-gate evaluate --profile P.json --states states.json  [--json out.json] [--md out.md]
+  общие ключи: --theta X, --uncertainty neighborhood|box (множество весов в правиле (4))
 
 Код возврата: 0 допуск, 10 ручное рассмотрение, 20 запрос свидетельств, 30 отказ, 2 ошибка входных данных.
 Его удобно использовать в CI как условие выпуска.
@@ -36,8 +37,10 @@ def to_markdown(profile: Profile, rep: dict) -> str:
           "- **Решение: %s**" % rep["decision_detail"], ""]
     g = rep["G"]
     L += ["| Величина | Значение |", "|---|---|",
-          "| R_P | %s |" % f3(rep["R"]), "| R_P^min … R_P^max (окрестность N(w)) | %s … %s |" % (f3(rep["R_min"]), f3(rep["R_max"])),
-          "| ошибка в классах всех рёбер | %s … %s |" % (f3(rep["R_box"][0]), f3(rep["R_box"][1])),
+          "| R_P | %s |" % f3(rep["R"]),
+          "| R_P^min … R_P^max (%s) | %s … %s |" % ("ящик классов B(w), правило (4)" if rep.get("uncertainty") == "box"
+                                                   else "окрестность N(w), правило (4)", f3(rep["R_min"]), f3(rep["R_max"])),
+          "| ящик классов B(w), ошибка в классах всех рёбер | %s … %s |" % (f3(rep["R_box"][0]), f3(rep["R_box"][1])),
           "| R_P^+ | %s |" % f3(rep["R_plus"]),
           "| G_P | %s |" % ({0: "0 (вето)", 1: "1"}.get(g, BOTTOM)), "| B_P | %d |" % rep["B"], ""]
     L += ["| Стадия | Обяз. | c | e | ℓ | r |", "|---|---|---|---|---|---|"]
@@ -68,6 +71,8 @@ def main(argv=None) -> int:
     e.add_argument("--states", required=True, help="JSON {id: P|N|F}")
     for p in (v, e):
         p.add_argument("--theta", type=float)
+        p.add_argument("--uncertainty", choices=["neighborhood", "box"],
+                       help="множество весов в правиле (4): окрестность N(w) (по умолчанию из профиля) или ящик классов B(w)")
         p.add_argument("--json")
         p.add_argument("--md")
         p.add_argument("--quiet", action="store_true")
@@ -92,7 +97,7 @@ def main(argv=None) -> int:
     else:
         with open(a.states, encoding="utf-8") as f:
             states = json.load(f)
-    rep = evaluate(profile, states, a.theta)
+    rep = evaluate(profile, states, a.theta, a.uncertainty)
     rep.update({"reasons": reasons, "artifact": artifact, "elapsed_s": time.perf_counter() - t0,
                 "tool": "scii-gate %s" % __version__,
                 "time_utc": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})

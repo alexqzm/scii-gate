@@ -4,8 +4,8 @@
 «Метод оценки целостности цепочки сборки и обновления программного обеспечения на основе графа доказательств».
 
 Запуск (нужен только Python 3.8+ без сторонних пакетов):
-    python3 scii_repro.py                 печать табл. 2, табл. 3 и чисел раздела «Результаты исследования
-                                          и их обсуждение»
+    python3 scii_repro.py                 печать табл. 2, 3, 5 и остальных чисел разделов «Вероятностная
+                                          интерпретация индекса» и «Результаты исследования и их обсуждение»
     python3 scii_repro.py --check         то же и сверка с числами статьи (код возврата 0 при совпадении)
     python3 scii_repro.py --json out.json сохранить все результаты в JSON
 
@@ -15,6 +15,7 @@
 import argparse
 import itertools
 import json
+import math
 import os
 import random
 import sys
@@ -34,6 +35,7 @@ EDGE_CLASS = {(e["from"], e["to"]): e["class"] for e in P["edges"]}
 W0 = {e: CODES[c] for e, c in EDGE_CLASS.items()}          # веса рёбер профиля
 CAT = P["catalog"]                                         # вершина -> список свидетельств
 ALL_S = [s["id"] for v in V for s in CAT[v]]
+ALPHA0 = {s["id"]: s["alpha"] for v in V for s in CAT[v]}
 S_NAME = {s["id"]: s["name"] for v in V for s in CAT[v]}
 ROOT = V[-1]
 
@@ -76,16 +78,28 @@ def labels(st, alpha=None, upper=False):
     return out
 
 
+def _preds(vertices, edges):
+    """Списки входящих рёбер в порядке профиля: рекурсия (2) просматривает каждое ребро один раз."""
+    p = {v: [] for v in vertices}
+    for (u, t) in edges:
+        p[t].append(u)
+    return p
+
+
+PREDS = _preds(V, EDGES)
+
+
 def index(lab, w, vertices=None, edges=None, root=None):
-    """(2): r(v) = l(v) * произведение по входящим рёбрам [1 - w(u,v)(1 - r(u))]; R_P = r(корня)."""
-    vertices = vertices or V
-    edges = edges or EDGES
+    """(2): r(v) = l(v) * произведение по входящим рёбрам [1 - w(u,v)(1 - r(u))]; R_P = r(корня). O(|V| + |E|)."""
+    if vertices is None:
+        vertices, preds = V, PREDS
+    else:
+        preds = _preds(vertices, edges)
     r = {}
     for v in vertices:
         x = lab[v]
-        for (u, t) in edges:
-            if t == v:
-                x *= 1 - w[(u, t)] * (1 - r[u])
+        for u in preds[v]:
+            x *= 1 - w[(u, v)] * (1 - r[u])
         r[v] = x
     return r[root or ROOT], r
 
@@ -129,17 +143,41 @@ def neighborhood(w=None):
 NW = neighborhood()
 
 
+def _corner(step):
+    w = {}
+    for e in EDGES:
+        i = min(max(CLASS_ORDER.index(EDGE_CLASS[e]) + step, 0), len(CLASS_ORDER) - 1)
+        w[e] = CODES[CLASS_ORDER[i]]
+    return w
+
+
+BOX_UP, BOX_DOWN = _corner(+1), _corner(-1)    # угловые наборы ящика B(w): все классы на шаг выше и ниже
+
+
 def interval(st, alpha=None):
+    """R_min и R_max на окрестности N(w)."""
     vals = [R(st, w2, alpha) for w2 in NW]
     return min(vals), max(vals)
 
 
-def rule4(st, theta=THETA, alpha=None):
-    """(4): условия проверяются по порядку."""
+def interval_box(st, alpha=None):
+    """R_min и R_max на ящике B(w): индекс не возрастает по весу ребра, крайние значения в двух углах."""
+    return R(st, BOX_UP, alpha), R(st, BOX_DOWN, alpha)
+
+
+def floor3(x):
+    """Округление вниз до 0,001, как в процедуре назначения порога."""
+    if isinstance(x, Fraction):
+        return Fraction(math.floor(x * 1000), 1000)
+    return math.floor(x * 1000 + 1e-9) / 1000
+
+
+def rule4(st, theta=THETA, alpha=None, box=False):
+    """(4): условия проверяются по порядку. box=True: множество весов U(w) = B(w) вместо N(w)."""
     g = gate(st)
     if g == "нд":
         return "запрос свидетельств"
-    rmin, rmax = interval(st, alpha)
+    rmin, rmax = interval_box(st, alpha) if box else interval(st, alpha)
     if g == 0 or rmax < theta:
         return "отказ"
     if binary(st) == 1 and rmin >= theta:
@@ -149,40 +187,50 @@ def rule4(st, theta=THETA, alpha=None):
 
 # ---------------- четыре варианта контролируемого эксперимента (табл. 3) ----------------
 def additive(st):
-    """Аддитивный индекс: среднее меток l_A(v) по вершинам."""
-    lab = labels(st)
-    return sum(lab[v]["l"] for v in V) / len(V)
+    """Аддитивный индекс: среднее меток l_A(v) по вершинам. Считается в рациональной арифметике, чтобы сравнение
+    с порогом на границе (например, 0,94 = 0,94) не зависело от ошибок округления."""
+    tot = Fraction(0)
+    for v in V:
+        c, e = Fraction(0), 1
+        for s in CAT[v]:
+            a, z = a_z(st[s["id"]])
+            c += Fraction(str(s["alpha"])) * a * z
+            if a == 1 and z == 0:
+                e = 0
+        tot += e * c
+    return tot / len(V)
 
 
-def var_binary(st):
+def var_binary(st, theta=None):
     return "допуск" if binary(st) == 1 else "отказ"
 
 
-def var_additive(st):
+def var_binary_rebuild(st, theta=None):
+    """Усиленный бинарный контроль: дополнительно обязательна независимая пересборка (s24)."""
+    return "допуск" if (binary(st) == 1 and st["s24"] == "P") else "отказ"
+
+
+def var_additive(st, theta=THETA):
     """То же блокирующее условие и правило (4), но с аддитивным индексом вместо R_P (окрестность весов рёбер не нужна)."""
     g = gate(st)
     if g == "нд":
         return "запрос свидетельств"
     m = additive(st)
-    if g == 0 or m < THETA:
+    if g == 0 or m < theta:
         return "отказ"
-    if binary(st) == 1 and m >= THETA:
+    if binary(st) == 1 and m >= theta:
         return "допуск"
     return "ручное рассмотрение"
 
 
-def var_graph_nogate(st):
+def var_graph_nogate(st, theta=THETA):
     """Только интервал индекса: допуск при R_min >= θ, отказ при R_max < θ, иначе ручное рассмотрение."""
     rmin, rmax = interval(st)
-    if rmax < THETA:
+    if rmax < theta:
         return "отказ"
-    if rmin >= THETA:
+    if rmin >= theta:
         return "допуск"
     return "ручное рассмотрение"
-
-
-VARIANTS = [("Бинарный контроль", var_binary), ("Аддитивный индекс с тем же блокирующим условием", var_additive),
-            ("Графовый индекс без блокирующего условия", var_graph_nogate), ("Полный метод", rule4)]
 LETTER = [("допуск", "Д"), ("ручное рассмотрение", "Р"), ("запрос свидетельств", "З"), ("отказ", "О")]
 
 
@@ -227,7 +275,7 @@ def main():
     say("\nПорог по процедуре назначения (эталон: %s): θ = %s, решения для сценариев 1-4 %s"
         % (ref, f3(th), "те же" if same else "меняются"))
 
-    # ---------------- табл. 3: 34 контролируемых случая ----------------
+    # ---------------- табл. 3: 34 контролируемых случая, общий и калиброванные пороги ----------------
     full = record()
     cases = []
     for v in V:
@@ -236,10 +284,22 @@ def main():
                 st = dict(full)
                 st[s["id"]] = state
                 cases.append((s["id"], state, st))
+    s1 = REC["сценарий 1"]
+    th_add = floor3(additive(s1))                     # калибровка: значение индекса для сценария 1, вниз до 0,001
+    th_gr = floor3(interval(s1)[0])
+    rows3 = [("Бинарный контроль", "–", var_binary),
+             ("Бинарный контроль с обязательной пересборкой", "–", var_binary_rebuild),
+             ("Аддитивный индекс", g_(THETA), lambda st: var_additive(st, THETA)),
+             ("Аддитивный индекс, калиброванный порог", f3(th_add), lambda st: var_additive(st, th_add)),
+             ("Графовый индекс без блокирующего условия", g_(THETA), lambda st: var_graph_nogate(st, THETA)),
+             ("Графовый индекс без блокирующего условия, калиброванный порог", f3(th_gr), lambda st: var_graph_nogate(st, th_gr)),
+             ("Полный метод", g_(THETA), lambda st: rule4(st, THETA)),
+             ("Полный метод, калиброванный порог", f3(th_gr), lambda st: rule4(st, th_gr))]
     t4 = {}
-    say("\nТабл. 3. Решения четырёх вариантов на %d контролируемых случаях" % len(cases))
-    for name, f in VARIANTS:
-        cells = {}
+    say("\nТабл. 3. Решения вариантов на %d контролируемых случаях (калибровка по сценарию 1: аддитивный %s, графовые %s)"
+        % (len(cases), f3(th_add), f3(th_gr)))
+    for name, thl, f in rows3:
+        cells = {"Порог": thl}
         for state, col in (("N", "Отсутствие"), ("F", "Опровержение")):
             cnt = {d: 0 for d, _ in LETTER}
             for _, s_state, st in cases:
@@ -247,44 +307,38 @@ def main():
                     cnt[f(st)] += 1
             cells[col] = ", ".join("%s %d" % (b, cnt[a]) for a, b in LETTER if cnt[a])
         t4[name] = cells
-        say("  %-36s Отсутствие (17): %-20s Опровержение (17): %s" % (name, cells["Отсутствие"], cells["Опровержение"]))
+        say("  %-62s %-6s Отсутствие (17): %-20s Опровержение (17): %s"
+            % (name, thl, cells["Отсутствие"], cells["Опровержение"]))
     out["table3"] = t4
+    out["calibration"] = {"additive": f3(th_add), "graph": f3(th_gr)}
     manual = [st for sid, state, st in cases if state == "F" and var_additive(st) == "ручное рассмотрение"]
-    means = sorted({round(additive(st), 9) for st in manual})
+    means = sorted({float(additive(st)) for st in manual})
     s22 = [st for sid, state, st in cases if sid == "s22" and state == "N"][0]
     out["additive_mean_manual"] = [g_(m) for m in means]
-    out["s22_absent"] = {"Rmin": f3(interval(s22)[0]), "без блокирующего условия": var_graph_nogate(s22), "полный": rule4(s22)}
-    say("  среднее меток в %d случаях ручного рассмотрения аддитивного варианта: %s"
+    out["s22_absent"] = {"Rmin": f3(interval(s22)[0]), "без блокирующего условия": var_graph_nogate(s22),
+                         "без блокирующего условия, калиброванный": var_graph_nogate(s22, th_gr), "полный": rule4(s22, th_gr)}
+    say("  среднее меток в %d случаях ручного рассмотрения аддитивного варианта при 0,75: %s"
         % (len(manual), ", ".join(out["additive_mean_manual"])))
-    say("  без аттестации происхождения: Rmin = %s, без блокирующего условия: %s, полный метод: %s"
-        % (out["s22_absent"]["Rmin"], out["s22_absent"]["без блокирующего условия"], out["s22_absent"]["полный"]))
-
-    # табл. 3 при пороге процедуры назначения
-    def nogate_th(st, t_):
-        rmin, rmax = interval(st)
-        return "отказ" if rmax < t_ else ("допуск" if rmin >= t_ else "ручное рассмотрение")
-
-    def additive_th(st, t_):
-        g = gate(st)
-        if g == "нд":
-            return "запрос свидетельств"
-        m = additive(st)
-        if g == 0 or m < t_:
-            return "отказ"
-        return "допуск" if (binary(st) == 1 and m >= t_) else "ручное рассмотрение"
-
-    ch = {"Аддитивный индекс с тем же блокирующим условием": [], "Графовый индекс без блокирующего условия": [], "Полный метод": []}
+    say("  без аттестации происхождения: Rmin = %s, без блокирующего условия %s при 0,75 и %s при %s, полный метод: %s"
+        % (out["s22_absent"]["Rmin"], out["s22_absent"]["без блокирующего условия"],
+           out["s22_absent"]["без блокирующего условия, калиброванный"], f3(th_gr), out["s22_absent"]["полный"]))
+    # разбор калиброванных решений по отсутствующим свидетельствам
+    by = {}
     for sid, state, st in cases:
-        if additive_th(st, th) != var_additive(st):
-            ch["Аддитивный индекс с тем же блокирующим условием"].append(sid + state)
-        if nogate_th(st, th) != var_graph_nogate(st):
-            ch["Графовый индекс без блокирующего условия"].append(sid + state + ": " + var_graph_nogate(st) + " -> " + nogate_th(st, th))
-        if rule4(st, th) != rule4(st):
-            ch["Полный метод"].append(sid + state + ": " + rule4(st) + " -> " + rule4(st, th))
-    out["theta_procedure"]["table4_changes"] = ch
-    say("  при θ = %s (порог процедуры назначения) в табл. 3 меняются:" % f3(th))
-    for k_, v_ in ch.items():
-        say("    %-36s %s" % (k_, ", ".join(v_) if v_ else "без изменений"))
+        if state == "N":
+            by[sid] = {"аддитивный": var_additive(st, th_add), "полный": rule4(st, th_gr), "alpha": g_(ALPHA0[sid])}
+    out["calibrated_absent"] = {
+        "additive_rejects": sorted(k for k, d in by.items() if d["аддитивный"] == "отказ"),
+        "additive_reject_min_alpha": g_(min(ALPHA0[k] for k, d in by.items() if d["аддитивный"] == "отказ")),
+        "additive_admits_rollback": by["s52"]["аддитивный"],
+        "full_rejects": sorted(k for k, d in by.items() if d["полный"] == "отказ"),
+        "full_commit_signatures": by["s11"]["полный"],
+        "kappa_v1": f3(math.prod(W0[e] for e in EDGES))}
+    say("  калиброванные пороги: аддитивный отклоняет %s (веса не ниже %s), выпуск без защиты от отката: %s; "
+        "полный метод отклоняет %s, без подписей коммитов: %s; κ_v1 = %s"
+        % (out["calibrated_absent"]["additive_rejects"], out["calibrated_absent"]["additive_reject_min_alpha"],
+           by["s52"]["аддитивный"], out["calibrated_absent"]["full_rejects"], by["s11"]["полный"],
+           out["calibrated_absent"]["kappa_v1"]))
 
     # ---------------- чувствительность к весам рёбер ----------------
     def ranking_ok(rs):
@@ -346,31 +400,20 @@ def main():
         dist1[rule4(REC["сценарий 1"], alpha=al)] += 1
         s2_same += rule4(REC["сценарий 2"], alpha=al) == rule4(REC["сценарий 2"])
         rank_same += ranking_ok({k: R(REC[k], alpha=al) for k in SCEN})
+    s2_proc = {d: 0 for d, _ in LETTER}
+    for _, al in alts:                                # порог по процедуре: R_min сценария 1 при тех же весах
+        s2_proc[rule4(REC["сценарий 2"], floor3(interval(REC["сценарий 1"], al)[0]), al)] += 1
     out["alpha_sensitivity"] = {"n": len(alts), "transfers": len(alts) - 1, "scenario1_rule4": dist1,
                                 "scenario1_equal_weights": rule4(REC["сценарий 1"], alpha=alts[0][1]),
-                                "scenario2_same": s2_same, "ranking_same": rank_same}
+                                "scenario2_same": s2_same, "ranking_same": rank_same,
+                                "scenario2_procedure": s2_proc}
     say("\nЧувствительность к весам свидетельств: %d вариантов (%d переносов и равные веса)" % (len(alts), len(alts) - 1))
     say("  сценарий 1, решение (4): допуск %d, ручное рассмотрение %d, отказ %d; при равных весах: %s"
         % (dist1["допуск"], dist1["ручное рассмотрение"], dist1["отказ"], out["alpha_sensitivity"]["scenario1_equal_weights"]))
     say("  сценарий 2: решение то же в %d из %d; ранжирование сохраняется в %d из %d"
         % (s2_same, len(alts), rank_same, len(alts)))
-
-    # ---------------- записи 5 и 6 ----------------
-    r5, r6 = REC["запись 5"], REC["запись 6"]
-    kappa = 1.0
-    for e in EDGES:                                   # единственный путь из v1 в корень
-        kappa *= W0[e]
-    thr = Fraction(1 - R(r5)).limit_denominator(1000) / Fraction(1 - labels(r6)["v1"]["l"]).limit_denominator(1000)
-    all_w = [dict(w2) for w2 in var_b] + [w2 for w2, _ in var_c] + [dict(W0)]
-    viol = [[w2[e] for e in EDGES] for w2 in all_w if not R(r6, w2) > R(r5, w2)]
-    crit = {e: 1.0 for e in EDGES}
-    out["pair"] = {"additive": "%s против %s" % (("%.2f" % additive(r5)).replace(".", ","), ("%.2f" % additive(r6)).replace(".", ",")),
-                   "graph": "%s против %s" % (f3(R(r6)), f3(R(r5))), "kappa_v1": f3(kappa), "threshold": str(thr),
-                   "violations": viol, "all_critical": "%s против %s" % (f3(R(r5, crit)), f3(R(r6, crit)))}
-    say("\nЗаписи 5 и 6: аддитивный индекс %s (5 против 6), графовый %s (6 против 5)"
-        % (out["pair"]["additive"], out["pair"]["graph"]))
-    say("  κ_v1 = %s; запись 6 выше, пока κ_v1 < %s; нарушения среди вариантов (б) и (в): %s; все связи критические (5 против 6): %s"
-        % (f3(kappa), thr, viol, out["pair"]["all_critical"]))
+    say("  порог по процедуре при каждом наборе весов: сценарий 2 %s"
+        % ", ".join("%s %d" % (d, n) for d, n in s2_proc.items() if n))
 
     # ---------------- ромбовидный граф (рис. 1, б): рекурсия и точная вероятность ----------------
     D = P["diamond"]
@@ -444,39 +487,116 @@ def main():
     vals = [R(s1, w2) for w2 in box]
     assert abs(min(vals) - lo) < 1e-12 and abs(max(vals) - hi) < 1e-12
     dec_box = ("отказ" if hi < THETA else ("допуск" if (binary(s1) == 1 and lo >= THETA) else "ручное рассмотрение"))
-    out["box"] = {"n": len(box), "scenario1": "%s и %s" % (f3(lo), f3(hi)), "scenario1_rule4": dec_box}
-    say("\nОшибка в классах всех рёбер сразу (%d наборов): сценарий 1 от %s до %s, правило (4): %s"
+    assert dec_box == rule4(s1, box=True) and (lo, hi) == interval_box(s1)
+    lo2, hi2 = interval_box(REC["сценарий 2"])
+    vals2 = [R(REC["сценарий 2"], w2) for w2 in box]
+    assert abs(min(vals2) - lo2) < 1e-12 and abs(max(vals2) - hi2) < 1e-12
+    out["box"] = {"n": len(box), "scenario1": "%s и %s" % (f3(lo), f3(hi)), "scenario1_rule4": dec_box,
+                  "scenario1_interval": "%s…%s" % (f3(lo), f3(hi)), "scenario2_interval": "%s…%s" % (f3(lo2), f3(hi2)),
+                  "rule4_box_075": [rule4(REC[k], box=True) for k in SCEN]}
+    say("\nЯщик классов B(w), ошибка в классах всех рёбер сразу (%d наборов): сценарий 1 от %s до %s, правило (4): %s"
         % (len(box), f3(lo), f3(hi), dec_box))
+    say("  сценарий 2 на ящике: %s…%s; правило (4) с ящиком при θ = 0,75 для сценариев 1–4: %s"
+        % (f3(lo2), f3(hi2), ", ".join(out["box"]["rule4_box_075"])))
     # ---------------- затухание при большом числе входов (раздел «Ограничения») ----------------
     out["fanin_50"] = ("%.3f" % (1 - 0.8 * (1 - 0.9)) ** 50).replace(".", ",")
     say("50 входов с меткой 0,9 и весом 0,8: множитель %s" % out["fanin_50"])
 
-    # ---------------- реальная цепочка ArduPilot (табл. 5): те же граф и веса, состояния из прогона стенда ----------------
+    # ---------------- реальная цепочка ArduPilot: 16 сценариев прогона стенда, те же граф и веса ----------------
     RC = P["real_chain"]
     th5 = RC["theta"]
-    rec5 = {k: record(r["absent"], r["refuted"]) for k, r in RC["records"].items()}
-    lo5, hi5 = interval(rec5[RC["theta_reference_record"]])
-    say("\nТабл. 5. Реальная цепочка ArduPilot Copter-4.5.7 / CubeOrange (θ = %s)" % g_(th5))
-    t5 = {}
-    for k, st in rec5.items():
+    SC16 = {k: record(r["absent"], r["refuted"]) for k, r in RC["scenarios"].items()}
+    DANG = [k for k, r in RC["scenarios"].items() if r["dangerous"]]
+    BEN = [k for k in SC16 if k not in DANG]
+    ref16 = SC16[RC["reference_scenario"]]
+    lo5, hi5 = interval(ref16)
+    say("\nРеальная цепочка ArduPilot Copter-4.5.7 / CubeOrange, 16 сценариев прогона стенда (θ = %s)" % g_(th5))
+    t16 = {}
+    for k, st in SC16.items():
         g = gate(st)
         row = {"R": f3(R(st)), "Rmin…Rmax": "%s…%s" % tuple(f3(x) for x in interval(st)) if g == 1 else "–",
                "G": {0: "0", "нд": "⊥", 1: "1"}[g], "B": str(binary(st)),
                "решение": "отказ (вето)" if g == 0 else rule4(st, th5)}
-        t5[k] = row
-        say("  %-56s %s  R = %s  [Rmin…Rmax] = %-12s G = %s  B = %s  решение: %s"
-            % (k, "/".join(RC["records"][k]["scenarios"]), row["R"], row["Rmin…Rmax"], row["G"], row["B"], row["решение"]))
-    out["table5"] = {k: t5[k] for k in RC["table5"]}
+        t16[k] = row
+        say("  %-4s %-8s R = %s  [Rmin…Rmax] = %-12s G = %s  B = %s  решение: %-20s %s"
+            % (k, "опасный" if k in DANG else "штатный", row["R"], row["Rmin…Rmax"], row["G"], row["B"],
+               row["решение"], RC["scenarios"][k]["title"]))
+    out["real_chain_scenarios"] = t16
     out["real_chain"] = {
-        "theta": g_(th5), "theta_is_floor_Rmin_ref": int(lo5 * 1000) / 1000 == th5, "Rmin_ref": ("%.4f" % lo5).replace(".", ","),
-        "Rmax_ref": f3(hi5), "archive": t5["сборка из изменённого архива исходников"]["решение"],
-        "bypass": t5["выпуск в обход конвейера"]["решение"],
-        "admitted_at_0.75": [k for k, st in rec5.items() if rule4(st, 0.75) == "допуск"],
-        "foreign_tag": (t5["тег подписан ключом вне политики"]["решение"], t5["тег подписан ключом вне политики"]["B"]),
-        "key_rotation": t5["смена ключа поставщика, политика не обновлена"]["решение"],
-        "official_no_refutation": all(x != "F" for x in rec5["официальный выпуск"].values())}
-    say("  порог: R_min эталона %s, округление вниз даёт θ = %s; R_max эталона %s; при θ = 0,75 допускаются: %s"
-        % (out["real_chain"]["Rmin_ref"], g_(th5), out["real_chain"]["Rmax_ref"], out["real_chain"]["admitted_at_0.75"] or "никто"))
+        "theta": g_(th5), "theta_is_floor_Rmin_ref": floor3(lo5) == th5, "Rmin_ref": ("%.4f" % lo5).replace(".", ","),
+        "Rmax_ref": f3(hi5), "n_dangerous": len(DANG), "n_benign": len(BEN),
+        "archive_A3": t16["A3"]["решение"], "bypass_A2": t16["A2"]["решение"], "official_O1": t16["O1"]["решение"],
+        "official_no_refutation": all(x != "F" for x in SC16["O1"].values()),
+        "key_rotation_B5a": t16["B5a"]["решение"],
+        "E": "%s (%s)" % (t16["B1"]["R"], t16["B1"]["Rmin…Rmax"]),
+        "B3": "%s (%s)" % (t16["B3"]["R"], t16["B3"]["Rmin…Rmax"]),
+        "B3_equals_A5b": SC16["B3"] == SC16["A5b"],
+        "admitted_at_0.75": [k for k, st in SC16.items() if rule4(st, 0.75) == "допуск"]}
+    say("  порог: R_min эталона %s, округление вниз даёт θ = %s; эталон %s, без пересборки %s; при θ = 0,75 допускаются: %s"
+        % (out["real_chain"]["Rmin_ref"], g_(th5), out["real_chain"]["E"], out["real_chain"]["B3"],
+           out["real_chain"]["admitted_at_0.75"] or "никто"))
+
+    # ---------------- табл. 5: политики на 16 сценариях при порогах, назначенных по эталону ----------------
+    th_a16, th_g16, th_b16 = floor3(additive(ref16)), floor3(interval(ref16)[0]), floor3(interval_box(ref16)[0])
+    assert th_g16 == th5
+    pol = [("Бинарный контроль", var_binary), ("Бинарный контроль с обязательной пересборкой", var_binary_rebuild),
+           ("Аддитивный индекс", lambda st: var_additive(st, th_a16)),
+           ("Графовый индекс без блокирующего условия", lambda st: var_graph_nogate(st, th_g16)),
+           ("Полный метод", lambda st: rule4(st, th_g16)),
+           ("Полный метод с ящиком", lambda st: rule4(st, th_b16, box=True))]
+    t6, dec16 = {}, {}
+    say("\nТабл. 5. Решения политик на 16 сценариях стенда (опасных %d, штатных %d); пороги по эталону %s: "
+        "аддитивный %s, графовые %s, с ящиком %s" % (len(DANG), len(BEN), RC["reference_scenario"], f3(th_a16),
+                                                    f3(th_g16), f3(th_b16)))
+    for name, f in pol:
+        d = {k: f(st) for k, st in SC16.items()}
+        dec16[name] = d
+        t6[name] = {"Опасные допущены": sum(d[k] == "допуск" for k in DANG),
+                    "Опасные на ручном рассмотрении": sum(d[k] == "ручное рассмотрение" for k in DANG),
+                    "Штатные допущены": sum(d[k] == "допуск" for k in BEN),
+                    "Штатные отклонены": sum(d[k] == "отказ" for k in BEN),
+                    "Запрос свидетельств": sum(x == "запрос свидетельств" for x in d.values())}
+        say("  %-46s %s" % (name, ", ".join("%s %d" % kv for kv in t6[name].items())))
+    out["table5"] = t6
+    out["table5_decisions"] = dec16
+    out["table5_thresholds"] = {"additive": f3(th_a16), "graph": f3(th_g16), "box": f3(th_b16)}
+    out["table5_same_box"] = dec16["Полный метод"] == dec16["Полный метод с ящиком"]
+    build = [s["id"] for s in CAT["v2"]]
+    out["table5_details"] = {
+        "binary_admits_dangerous": [k for k in DANG if dec16["Бинарный контроль"][k] == "допуск"],
+        "binary_rejects_benign": [k for k in BEN if dec16["Бинарный контроль"][k] == "отказ"],
+        "rebuild_rejects_benign": [k for k in BEN if dec16["Бинарный контроль с обязательной пересборкой"][k] == "отказ"],
+        "additive_rejects_benign": [k for k in BEN if dec16["Аддитивный индекс"][k] == "отказ"],
+        "nogate_manual_dangerous": [k for k in DANG if dec16["Графовый индекс без блокирующего условия"][k] == "ручное рассмотрение"],
+        "nogate_manual_build_refuted": [k for k in DANG if dec16["Графовый индекс без блокирующего условия"][k] == "ручное рассмотрение"
+                                        and any(SC16[k][s] == "F" for s in build)],
+        "full_rejects_benign": [k for k in BEN if dec16["Полный метод"][k] == "отказ"],
+        "full_manual": [k for k in SC16 if dec16["Полный метод"][k] == "ручное рассмотрение"],
+        "full_request": [k for k in SC16 if dec16["Полный метод"][k] == "запрос свидетельств"]}
+    for k_, v_ in out["table5_details"].items():
+        say("    %-28s %s" % (k_, v_))
+    # диапазон порога, при котором решения всех 16 сценариев те же (порог с шагом 0,001)
+    base16 = dec16["Полный метод"]
+    ok_t = [t / 1000 for t in range(0, 1001) if all(rule4(st, t / 1000) == base16[k] for k, st in SC16.items())]
+    out["theta_range"] = {"from": f3(min(ok_t)), "to": f3(max(ok_t)),
+                          "contiguous": len(ok_t) == round((max(ok_t) - min(ok_t)) * 1000) + 1,
+                          "below": {k: rule4(SC16[k], min(ok_t) - 0.001) for k in ("B3", "A5b")}}
+    say("  решения 16 сценариев сохраняются при θ от %s до %s; при θ ниже: %s"
+        % (out["theta_range"]["from"], out["theta_range"]["to"], out["theta_range"]["below"]))
+    # веса α на стенде: постоянный порог и порог по процедуре при каждом наборе весов
+    fixed_changed = proc_changed = fixed_a5b = proc_dangerous = 0
+    for _, al in alts:
+        df = {k: rule4(st, th5, al) for k, st in SC16.items()}
+        thp = floor3(interval(ref16, al)[0])
+        dp = {k: rule4(st, thp, al) for k, st in SC16.items()}
+        fixed_changed += df != base16
+        proc_changed += dp != base16
+        fixed_a5b += df["A5b"] == "допуск"
+        proc_dangerous += any(dp[k] == "допуск" for k in DANG)
+    out["real_chain_alpha"] = {"n": len(alts), "fixed_changed": fixed_changed, "fixed_A5b_admitted": fixed_a5b,
+                               "procedure_changed": proc_changed, "procedure_dangerous_admitted": proc_dangerous}
+    say("  веса α (%d вариантов): при θ = %s решения меняются в %d, скомпрометированный сборщик допущен в %d; "
+        "при пороге по процедуре решения меняются в %d" % (len(alts), g_(th5), fixed_changed, fixed_a5b, proc_changed))
 
     if args.json:
         json.dump(out, open(args.json, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
@@ -486,26 +606,33 @@ def main():
 
 # ---------------- числа, напечатанные в статье ----------------
 ARTICLE = {
-    ("table2", "сценарий 1"): {"c": "0,9; 0,9; 1; 1; 0,9", "R": "0,801", "Rmin;Rmax": "0,776; 0,838", "R+": "1,000",
-                               "G": "1", "B": "1", "решение": "допуск"},
-    ("table2", "сценарий 2"): {"c": "0,4; 0,9; 1; 1; 0,9", "R": "0,594", "Rmin;Rmax": "0,517; 0,708", "R+": "1,000",
-                               "G": "1", "B": "1", "решение": "отказ"},
-    ("table2", "сценарий 3"): {"c": "0,9; 0,9; 1; 0,6; 0,9", "R": "0,180", "Rmin;Rmax": "—", "R+": "0,200",
-                               "G": "0 (вето)", "B": "0", "решение": "отказ (вето)"},
-    ("table2", "сценарий 4"): {"c": "0,9; 0,9; 1; 0,6; 0,9", "R": "0,553", "Rmin;Rmax": "—", "R+": "1,000",
-                               "G": "⊥", "B": "0", "решение": "запрос свидетельств"},
-    ("table5",): {
-        "официальный выпуск": {"R": "0,040", "Rmin…Rmax": "–", "G": "⊥", "B": "0", "решение": "запрос свидетельств"},
-        "эталонная запись": {"R": "0,577", "Rmin…Rmax": "0,497…0,698", "G": "1", "B": "1", "решение": "допуск"},
-        "без независимой пересборки, сборщик штатный или скомпрометирован": {"R": "0,552", "Rmin…Rmax": "0,465…0,683", "G": "1",
-                                                                               "B": "1", "решение": "ручное рассмотрение"},
-        "сборщик скомпрометирован, пересборка дала другой образ": {"R": "0,324", "Rmin…Rmax": "–", "G": "0", "B": "0",
-                                                                     "решение": "отказ (вето)"}},
-    ("table3",): {"Бинарный контроль": {"Отсутствие": "Д 15, О 2", "Опровержение": "О 17"},
-                  "Аддитивный индекс с тем же блокирующим условием": {"Отсутствие": "Д 15, З 2", "Опровержение": "Р 10, О 7"},
-                  "Графовый индекс без блокирующего условия": {"Отсутствие": "Д 9, Р 6, О 2", "Опровержение": "О 17"},
-                  "Полный метод": {"Отсутствие": "Д 8, Р 5, З 2, О 2", "Опровержение": "О 17"}},
+    "table2": {
+        "сценарий 1": {"c": "0,9; 0,9; 1; 1; 0,9", "R": "0,801", "Rmin;Rmax": "0,776; 0,838", "R+": "1,000",
+                       "G": "1", "B": "1", "решение": "допуск"},
+        "сценарий 2": {"c": "0,4; 0,9; 1; 1; 0,9", "R": "0,594", "Rmin;Rmax": "0,517; 0,708", "R+": "1,000",
+                       "G": "1", "B": "1", "решение": "отказ"},
+        "сценарий 3": {"c": "0,9; 0,9; 1; 0,6; 0,9", "R": "0,180", "Rmin;Rmax": "—", "R+": "0,200",
+                       "G": "0 (вето)", "B": "0", "решение": "отказ (вето)"},
+        "сценарий 4": {"c": "0,9; 0,9; 1; 0,6; 0,9", "R": "0,553", "Rmin;Rmax": "—", "R+": "1,000",
+                       "G": "⊥", "B": "0", "решение": "запрос свидетельств"}},
+    "table3": {
+        "Бинарный контроль": ("–", "Д 15, О 2", "О 17"),
+        "Бинарный контроль с обязательной пересборкой": ("–", "Д 14, О 3", "О 17"),
+        "Аддитивный индекс": ("0,75", "Д 15, З 2", "Р 10, О 7"),
+        "Аддитивный индекс, калиброванный порог": ("0,940", "Д 11, З 2, О 4", "О 17"),
+        "Графовый индекс без блокирующего условия": ("0,75", "Д 9, Р 6, О 2", "О 17"),
+        "Графовый индекс без блокирующего условия, калиброванный порог": ("0,776", "Д 6, Р 9, О 2", "О 17"),
+        "Полный метод": ("0,75", "Д 8, Р 5, З 2, О 2", "О 17"),
+        "Полный метод, калиброванный порог": ("0,776", "Д 6, Р 7, З 2, О 2", "О 17")},
+    "table5": {
+        "Бинарный контроль": (1, 0, 4, 3, 0),
+        "Бинарный контроль с обязательной пересборкой": (0, 0, 3, 4, 0),
+        "Аддитивный индекс": (0, 0, 2, 3, 3),
+        "Графовый индекс без блокирующего условия": (0, 5, 2, 3, 0),
+        "Полный метод": (0, 2, 2, 1, 3)},
 }
+T5_COLS = ["Опасные допущены", "Опасные на ручном рассмотрении", "Штатные допущены", "Штатные отклонены",
+           "Запрос свидетельств"]
 
 
 def check(out):
@@ -513,66 +640,98 @@ def check(out):
 
     def eq(label, got, exp):
         ok.append(got == exp)
-        print(("OK " if got == exp else "!! ") + label + ": " + str(got) + ("" if got == exp else "  (в статье %s)" % exp))
+        print(("OK " if got == exp else "!! ") + label + ": " + str(got) + ("" if got == exp else "  (в статье %s)" % (exp,)))
 
-    print("\nСверка с числами статьи")
-    for k in SCEN:
-        for col, exp in ARTICLE[("table2", k)].items():
+    print("\nСверка с числами статьи. Пометка «дополнительно» означает проверку, которой нет в тексте статьи.")
+    # табл. 2 и абзац после неё
+    for k, cells in ARTICLE["table2"].items():
+        for col, exp in cells.items():
             eq("табл. 2, %s, %s" % (k, col), out["table2"][k][col], exp)
-    for name, cells in ARTICLE[("table3",)].items():
-        for col, exp in cells.items():
-            eq("табл. 3, %s, %s" % (name, col), out["table3"][name][col], exp)
-    eq("порог по процедуре на примере (дополнительно)", out["theta_procedure"]["theta"], "0,776")
-    eq("решения при этом пороге те же (дополнительно)", out["theta_procedure"]["same_decisions"], True)
-    eq("табл. 3 при пороге 0,776 (дополнительно, в статье не приводится)", out["theta_procedure"]["table4_changes"],
-       {"Аддитивный индекс с тем же блокирующим условием": [],
-        "Графовый индекс без блокирующего условия": ["s21N: допуск -> ручное рассмотрение", "s22N: допуск -> ручное рассмотрение",
-                                      "s23N: допуск -> ручное рассмотрение"],
-        "Полный метод": ["s21N: допуск -> ручное рассмотрение", "s23N: допуск -> ручное рассмотрение"]})
-    eq("среднее меток в 10 случаях", out["additive_mean_manual"], ["0,8"])
-    eq("Rmin без аттестации происхождения", out["s22_absent"]["Rmin"], "0,760")
-    eq("без блокирующего условия / полный метод", (out["s22_absent"]["без блокирующего условия"], out["s22_absent"]["полный"]), ("допуск", "запрос свидетельств"))
+    eq("порог по процедуре для примера и те же решения сценариев 1–4 (дополнительно)",
+       (out["theta_procedure"]["theta"], out["theta_procedure"]["same_decisions"]), ("0,776", True))
+    # табл. 3 и абзац после неё
+    for name, (thr, absent, refuted) in ARTICLE["table3"].items():
+        got = out["table3"][name]
+        eq("табл. 3, %s" % name, (got["Порог"], got["Отсутствие"], got["Опровержение"]), (thr, absent, refuted))
+    eq("калиброванные пороги: аддитивный, графовые", (out["calibration"]["additive"], out["calibration"]["graph"]),
+       ("0,940", "0,776"))
+    eq("среднее меток в 10 случаях ручного рассмотрения аддитивного индекса при 0,75", out["additive_mean_manual"], ["0,8"])
+    eq("без аттестации происхождения: R_min, решение без блокирующего условия при 0,75 и 0,776, полный метод",
+       (out["s22_absent"]["Rmin"], out["s22_absent"]["без блокирующего условия"],
+        out["s22_absent"]["без блокирующего условия, калиброванный"], out["s22_absent"]["полный"]),
+       ("0,760", "допуск", "ручное рассмотрение", "запрос свидетельств"))
+    ca = out["calibrated_absent"]
+    eq("калиброванный аддитивный индекс: отклоняет (веса не ниже 0,4), выпуск без защиты от отката (s52)",
+       (ca["additive_rejects"], ca["additive_reject_min_alpha"], ca["additive_admits_rollback"]),
+       (["s11", "s31", "s32", "s51"], "0,4", "допуск"))
+    eq("полный метод при калиброванном пороге: отклоняет только проверки на устройстве, без подписей коммитов",
+       (ca["full_rejects"], ca["full_commit_signatures"]), (["s51", "s52"], "ручное рассмотрение"))
+    eq("κ_v1", ca["kappa_v1"], "0,512")
+    # чувствительность
     es = out["edge_sensitivity"]
-    eq("|N(w)| (7 смещений и w)", out["neighborhood_size"], 8)
-    eq("(а) комбинаций", es["а"]["n"], 7)
-    eq("(б) комбинаций", es["б"]["n"], 53)
-    eq("(в) наборов кодов / векторов (число векторов дополнительно)", (es["в"]["n"], es["в"]["distinct_vectors"]), (84, 7))
-    eq("ранжирование сохраняется везде", (es["а"]["ranking"], es["б"]["ranking"], es["в"]["ranking"]), (7, 53, 84))
-    eq("сценарий 1: пороговый допуск в (а), (б), (в)", (es["а"]["s1_point_admit"], es["б"]["s1_point_admit"], es["в"]["s1_point_admit"]), (7, 51, 84))
-    eq("сценарий 2: пороговый отказ в (а), (б)", (es["а"]["s2_point_reject"], es["б"]["s2_point_reject"]), (7, 41))
-    eq("сценарий 2 в (в): код сильного класса не выше", es["в"]["s2_admit_strong_max"], "0,6")
-    eq("сценарий 2 в (в): векторов и наборов (дополнительно)", (es["в"]["s2_admit_vectors"], es["в"]["s2_admit_codings"]), (4, 20))
+    eq("сдвиги классов подмножеств рёбер: комбинаций, порядок сценариев сохранён", (es["б"]["n"], es["б"]["ranking"]), (53, 53))
+    eq("наборы кодов: наборов, разных векторов, порядок сохранён",
+       (es["в"]["n"], es["в"]["distinct_vectors"], es["в"]["ranking"]), (84, 7, 84))
+    eq("сдвиг класса одного ребра: 7 комбинаций, |N(w)| = 8 (дополнительно)", (es["а"]["n"], out["neighborhood_size"]), (7, 8))
+    bx = out["box"]
+    eq("ящик B(w): наборов (дополнительно)", bx["n"], 54)
+    eq("ящик B(w): сценарии 1 и 2", (bx["scenario1_interval"], bx["scenario2_interval"]), ("0,729…0,874", "0,324…0,833"))
+    eq("правило (4) с ящиком при θ = 0,75, сценарии 1 и 2", bx["rule4_box_075"][:2],
+       ["ручное рассмотрение", "ручное рассмотрение"])
     al = out["alpha_sensitivity"]
-    eq("варианты весов свидетельств", (al["transfers"], al["n"]), (35, 36))
-    eq("сценарий 1: допуск, ручное, отказ", (al["scenario1_rule4"]["допуск"], al["scenario1_rule4"]["ручное рассмотрение"], al["scenario1_rule4"]["отказ"]), (26, 6, 4))
+    eq("веса свидетельств: переносов, всего вариантов", (al["transfers"], al["n"]), (35, 36))
+    eq("порядок сценариев при всех вариантах весов α", al["ranking_same"], 36)
+    eq("сценарий 1 при θ = 0,75: допуск, ручное рассмотрение, отказ",
+       (al["scenario1_rule4"]["допуск"], al["scenario1_rule4"]["ручное рассмотрение"], al["scenario1_rule4"]["отказ"]),
+       (26, 6, 4))
     eq("сценарий 1 при равных весах", al["scenario1_equal_weights"], "отказ")
-    eq("сценарий 2 и ранжирование во всех 36", (al["scenario2_same"], al["ranking_same"]), (36, 36))
-    pr = out["pair"]
-    eq("записи 5 и 6, аддитивный", pr["additive"], "0,90 против 0,88")
-    eq("записи 5 и 6, графовый", pr["graph"], "0,693 против 0,500")
-    eq("κ_v1", pr["kappa_v1"], "0,512")
-    eq("граница κ_v1", pr["threshold"], "5/6")
-    eq("нарушения только при всех критических связях (дополнительно)", pr["violations"], [[1.0, 1.0, 1.0, 1.0]])
-    eq("все связи критические, запись 5 против записи 6 («Ограничения»)", pr["all_critical"], "0,500 против 0,400")
+    eq("порог по процедуре при каждом наборе весов: сценарий 2 отклонён в 35 из 36",
+       (al["scenario2_procedure"]["отказ"], al["n"]), (35, 36))
+    # вероятностная интерпретация и «Ограничения»
     dm = out["diamond"]
-    eq("ромб, ℓ(d1) = 0,9", dm["cases"]["0,9"], ("0,795", "0,821"))
-    eq("ромб, ℓ(d1) = 0,4 (дополнительно)", dm["cases"]["0,4"], ("0,356", "0,425"))
-    eq("случайные наборы: n, нарушений; seed (в статье не печатается)", (dm["random_n"], dm["violations"], dm["seed"]), (200, 0, 20240628))
-    eq("свойство 3(в): ухудшений", out["monotonicity"]["violations"], 0)
+    eq("граф со сходящимися путями: рекурсия и точная вероятность", dm["cases"]["0,9"], ("0,795", "0,821"))
+    eq("случайные наборы: число и нарушений (7)", (dm["random_n"], dm["violations"]), (200, 0))
+    eq("свойство 3(в) на пополнениях сценариев 1 и 2: ухудшений (дополнительно)", out["monotonicity"]["violations"], 0)
     eq("разбиение стадии («Ограничения»)", out["split_example"], "0,81")
-    eq("ошибка в классах всех рёбер: сценарий 1", (out["box"]["n"], out["box"]["scenario1"], out["box"]["scenario1_rule4"]),
-       (54, "0,729 и 0,874", "ручное рассмотрение"))
-    eq("50 входов: множитель", out["fanin_50"], "0,015")
-    for name, cells in ARTICLE[("table5",)].items():
-        for col, exp in cells.items():
-            eq("табл. 5, %s, %s" % (name, col), out["table5"][name][col], exp)
+    eq("50 входов: множитель («Ограничения»)", out["fanin_50"], "0,015")
+    # реальная цепочка
     rc = out["real_chain"]
-    eq("реальная цепочка: θ = R_min эталона, округлённый вниз", (rc["theta"], rc["Rmin_ref"], rc["theta_is_floor_Rmin_ref"]), ("0,496", "0,4968", True))
-    eq("реальная цепочка: опровержений в официальном выпуске нет", rc["official_no_refutation"], True)
-    eq("реальная цепочка: изменённый архив и обход конвейера", (rc["archive"], rc["bypass"]), ("отказ (вето)", "запрос свидетельств"))
-    eq("реальная цепочка: при θ = 0,75 допуска нет, R_max эталона", (rc["admitted_at_0.75"], rc["Rmax_ref"]), ([], "0,698"))
-    eq("реальная цепочка: тег с подписью ключом вне политики («Ограничения»)", rc["foreign_tag"], ("ручное рассмотрение", "0"))
-    eq("реальная цепочка: смена ключа без обновления политики («Ограничения»)", rc["key_rotation"], "отказ (вето)")
+    eq("реальная цепочка: θ = R_min эталона, округлённый вниз",
+       (rc["theta"], rc["Rmin_ref"], rc["theta_is_floor_Rmin_ref"]), ("0,496", "0,4968", True))
+    eq("реальная цепочка: опасных и штатных сценариев", (rc["n_dangerous"], rc["n_benign"]), (9, 7))
+    eq("эталон и запись без пересборки", (rc["E"], rc["B3"]), ("0,577 (0,497…0,698)", "0,552 (0,465…0,683)"))
+    eq("записи B3 и A5b совпадают", rc["B3_equals_A5b"], True)
+    eq("официальный образ: опровержений нет, запрос свидетельств", (rc["official_no_refutation"], rc["official_O1"]),
+       (True, "запрос свидетельств"))
+    eq("сборка из изменённого архива (A3), выпуск в обход конвейера (A2)", (rc["archive_A3"], rc["bypass_A2"]),
+       ("отказ (вето)", "запрос свидетельств"))
+    eq("смена ключа поставщика без обновления политики (B5a)", rc["key_rotation_B5a"], "отказ (вето)")
+    eq("при θ = 0,75 допуска нет (дополнительно)", rc["admitted_at_0.75"], [])
+    # табл. 5 и абзац после неё
+    for name, exp in ARTICLE["table5"].items():
+        eq("табл. 5, %s" % name, tuple(out["table5"][name][c] for c in T5_COLS), exp)
+    eq("пороги по эталону: аддитивный, с ящиком", (out["table5_thresholds"]["additive"], out["table5_thresholds"]["box"]),
+       ("0,840", "0,270"))
+    eq("полный метод с ящиком даёт те же решения", out["table5_same_box"], True)
+    td = out["table5_details"]
+    eq("бинарный контроль допустил скомпрометированного сборщика без пересборки", td["binary_admits_dangerous"], ["A5b"])
+    eq("обязательная пересборка: отклонённые штатные и добавленный к ним выпуск без пересборки",
+       (td["rebuild_rejects_benign"], sorted(set(td["rebuild_rejects_benign"]) - set(td["binary_rejects_benign"]))),
+       (["O1", "O2", "B3", "B5a"], ["B3"]))
+    eq("аддитивный индекс отклоняет неполные штатные записи и пакет с вето", td["additive_rejects_benign"],
+       ["B2", "B3", "B5a"])
+    eq("без блокирующего условия: опасных на ручном рассмотрении, из них с опровергнутыми свидетельствами сборки",
+       (len(td["nogate_manual_dangerous"]), td["nogate_manual_build_refuted"]), (5, ["A3", "A5a"]))
+    eq("полный метод: отклонённый штатный пакет, ручных рассмотрений",
+       (td["full_rejects_benign"], len(td["full_manual"])), (["B5a"], 4))
+    tr = out["theta_range"]
+    eq("решения всех сценариев сохраняются при θ", (tr["from"], tr["to"], tr["contiguous"]), ("0,466", "0,496", True))
+    eq("ниже допускается и скомпрометированный сборщик", tr["below"]["A5b"], "допуск")
+    ra = out["real_chain_alpha"]
+    eq("веса α на стенде: вариантов, изменений при пороге по эталону, допусков опасных",
+       (ra["n"], ra["procedure_changed"], ra["procedure_dangerous_admitted"]), (36, 0, 0))
+    eq("при постоянном пороге 0,496: изменений, допусков скомпрометированного сборщика",
+       (ra["fixed_changed"], ra["fixed_A5b_admitted"]), (9, 4))
     print("Совпало %d из %d" % (sum(ok), len(ok)))
     return 0 if all(ok) else 1
 
