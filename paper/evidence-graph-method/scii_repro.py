@@ -201,15 +201,20 @@ def floor3(x):
     return math.floor(x * 1000 + 1e-9) / 1000
 
 
+THETA_TOL = 1e-9   # допуск сравнения границ индекса с порогом, как в scii/model.py: равенство порогу не теряется
+                   # из-за ошибки округления (R_P^min эталона стенда 0,4968 в плавающей арифметике 0,4967999999999999)
+
+
 def rule4(st, theta=THETA, alpha=None, box=False):
-    """(4): условия проверяются по порядку. box=True: множество весов U(w) = B(w) вместо N(w)."""
+    """(4): условия проверяются по порядку. box=True: множество весов U(w) = B(w) вместо N(w).
+    Границы индекса сравниваются с порогом с допуском THETA_TOL."""
     g = gate(st)
     if g == "нд":
         return "запрос свидетельств"
     rmin, rmax = interval_box(st, alpha) if box else interval(st, alpha)
-    if g == 0 or rmax < theta:
+    if g == 0 or rmax < theta - THETA_TOL:
         return "отказ"
-    if binary(st) == 1 and rmin >= theta:
+    if binary(st) == 1 and rmin >= theta - THETA_TOL:
         return "допуск"
     return "ручное рассмотрение"
 
@@ -253,11 +258,12 @@ def var_additive(st, theta=THETA):
 
 
 def var_graph_nogate(st, theta=THETA):
-    """Только интервал индекса: допуск при R_min >= θ, отказ при R_max < θ, иначе ручное рассмотрение."""
+    """Только интервал индекса: допуск при R_min >= θ, отказ при R_max < θ, иначе ручное рассмотрение
+    (сравнения с тем же допуском THETA_TOL)."""
     rmin, rmax = interval(st)
-    if rmax < theta:
+    if rmax < theta - THETA_TOL:
         return "отказ"
-    if rmin >= theta:
+    if rmin >= theta - THETA_TOL:
         return "допуск"
     return "ручное рассмотрение"
 LETTER = [("допуск", "Д"), ("ручное рассмотрение", "Р"), ("запрос свидетельств", "З"), ("отказ", "О")]
@@ -619,10 +625,13 @@ def main():
     low = max(c for c in crit if c[0] < th0)
     up = min(c for c in crit if c[0] >= th0)
     grid = [t / 1000 for t in range(0, 1001) if all(rule4(st, t / 1000) == base16[k] for k, st in SC16.items())]
+    at_upper = all(rule4(st, float(up[0])) == base16[k] for k, st in SC16.items())          # граница включена
+    at_lower = {k: rule4(SC16[k], float(low[0])) for k in ("B3", "A5b")}                  # граница исключена
     fexact = lambda x: ("%s" % float(x)).replace(".", ",")
     out["theta_range"] = {"lower_exclusive": fexact(low[0]), "lower_by": [k for c, k, _ in crit if c == low[0]],
                           "upper_inclusive": fexact(up[0]), "upper_by": [k for c, k, _ in crit if c == up[0]],
                           "grid_0001": [f3(min(grid)), f3(max(grid))],
+                          "same_at_upper": at_upper, "at_lower": at_lower,
                           "below": {k: rule4(SC16[k], float(low[0]) - 1e-6) for k in ("B3", "A5b")}}
     say("  решения 16 сценариев сохраняются при %s < θ <= %s (точно; границы: R_min %s и R_min %s); на сетке 0,001 от %s до %s; "
         "чуть ниже %s: %s" % (out["theta_range"]["lower_exclusive"], out["theta_range"]["upper_inclusive"],
@@ -774,6 +783,8 @@ def check(out):
        (tr["lower_exclusive"], tr["upper_inclusive"], tr["lower_by"], sorted(tr["upper_by"])),
        ("0,46512", "0,4968", ["B3", "A5b"], ["B1", "B5b"]))
     eq("на сетке с шагом 0,001 от 0,466 до 0,496 (дополнительно)", tr["grid_0001"], ["0,466", "0,496"])
+    eq("при θ = 0,4968 решения те же, при θ = 0,46512 допускается запись без пересборки (сравнение с допуском 1e-9)",
+       (tr["same_at_upper"], tr["at_lower"]["B3"], tr["at_lower"]["A5b"]), (True, "допуск", "допуск"))
     eq("ниже нижней границы допускается и скомпрометированный сборщик", tr["below"]["A5b"], "допуск")
     ra = out["real_chain_alpha"]
     eq("веса α на стенде: вариантов, изменений при пороге по эталону, допусков опасных",
