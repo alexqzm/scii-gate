@@ -3,7 +3,7 @@
 
 Проверяется, что пакет воспроизводит все числа статьи, что 16 сценариев в его профиле совпадают с состояниями
 прогона стенда, что разметка «опасный» совпадает с группой A программы испытаний и что две независимые
-реализации формул (пакет и scii/model.py) дают одинаковые записи и решения пяти политик табл. 5."""
+реализации формул (пакет и scii/model.py) дают одинаковые записи и решения пяти политик табл. 4."""
 import json
 import math
 import os
@@ -90,7 +90,7 @@ def _additive(st):
     return sum(Fraction(str(round(x["l"], 12))) for x in lab.values()) / len(lab)
 
 
-def test_table5_policies_two_implementations_agree(tmp_path):
+def test_table4_policies_two_implementations_agree(tmp_path):
     out = pkg_json(tmp_path)
     states = {k: v["states"] for k, v in SCEN.items()}
     ref = states[PAPER["real_chain"]["reference_scenario"]]
@@ -98,7 +98,7 @@ def test_table5_policies_two_implementations_agree(tmp_path):
     th_a = Fraction(str(floor3(float(_additive(ref)))))
     th_b = floor3(interval_box(PROF, ref)[0])
     assert th_g == PROF.theta
-    assert (f3(float(th_a)), f3(th_b)) == (out["table5_thresholds"]["additive"], out["table5_thresholds"]["box"])
+    assert (f3(float(th_a)), f3(th_b)) == (out["table4_thresholds"]["additive"], out["table4_thresholds"]["box"])
 
     def additive_rule(st):
         g = gate(PROF, st)
@@ -120,4 +120,4 @@ def test_table5_policies_two_implementations_agree(tmp_path):
            "Полный метод": lambda st: decide(PROF, st, theta=th_g),
            "Полный метод с ящиком": lambda st: decide(PROF, st, theta=th_b, uncertainty=BOX)}
     for name, f in pol.items():
-        assert {k: f(st) for k, st in states.items()} == out["table5_decisions"][name], name
+        assert {k: f(st) for k, st in states.items()} == out["table4_decisions"][name], name

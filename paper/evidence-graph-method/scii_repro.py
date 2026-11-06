@@ -4,7 +4,7 @@
 «Метод оценки целостности цепочки сборки и обновления программного обеспечения на основе графа доказательств».
 
 Запуск (нужен только Python 3.8+ без сторонних пакетов):
-    python3 scii_repro.py                 печать табл. 2, 3, 5 и остальных чисел разделов «Вероятностная
+    python3 scii_repro.py                 печать табл. 2–4 и остальных чисел разделов «Вероятностная
                                           интерпретация индекса» и «Результаты исследования и их обсуждение»
     python3 scii_repro.py --check         то же и сверка с числами статьи (код возврата 0 при совпадении)
     python3 scii_repro.py --json out.json сохранить все результаты в JSON
@@ -267,7 +267,7 @@ def var_graph_nogate(st, theta=THETA):
         return "допуск"
     return "ручное рассмотрение"
 LETTER = [("допуск", "Д"), ("ручное рассмотрение", "Р"), ("запрос свидетельств", "З"), ("отказ", "О")]
-T5_DEC = ["допуск", "отказ", "ручное рассмотрение", "запрос свидетельств"]     # порядок столбцов табл. 5
+T4_DEC = ["допуск", "отказ", "ручное рассмотрение", "запрос свидетельств"]     # порядок столбцов табл. 4
 
 
 def f3(x):
@@ -572,7 +572,7 @@ def main():
         % (out["real_chain"]["Rmin_ref"], g_(th5), out["real_chain"]["E"], out["real_chain"]["B3"],
            out["real_chain"]["admitted_at_0.75"] or "никто"))
 
-    # ---------------- табл. 5: политики на 16 сценариях при порогах, назначенных по эталону ----------------
+    # ---------------- табл. 4: политики на 16 сценариях при порогах, назначенных по эталону ----------------
     th_a16, th_g16, th_b16 = floor3(additive(ref16)), floor3(interval(ref16)[0]), floor3(interval_box(ref16)[0])
     assert th_g16 == th5
     pol = [("Бинарный контроль", var_binary), ("Бинарный контроль с обязательной пересборкой", var_binary_rebuild),
@@ -581,23 +581,23 @@ def main():
            ("Полный метод", lambda st: rule4(st, th_g16)),
            ("Полный метод с ящиком", lambda st: rule4(st, th_b16, box=True))]
     t6, dec16 = {}, {}
-    say("\nТабл. 5. Решения политик на 16 сценариях стенда (опасных %d, штатных %d); пороги по эталону %s: "
+    say("\nТабл. 4. Решения политик на 16 сценариях стенда (опасных %d, штатных %d); пороги по эталону %s: "
         "аддитивный %s, графовые %s, с ящиком %s" % (len(DANG), len(BEN), RC["reference_scenario"], f3(th_a16),
                                                     f3(th_g16), f3(th_b16)))
     say("  %-46s %-20s %s" % ("", "опасные: Д, О, Р, З", "штатные: Д, О, Р, З"))
     for name, f in pol:
         d = {k: f(st) for k, st in SC16.items()}
         dec16[name] = d
-        t6[name] = {grp: {dec: sum(d[k] == dec for k in ks) for dec in T5_DEC}
+        t6[name] = {grp: {dec: sum(d[k] == dec for k in ks) for dec in T4_DEC}
                     for grp, ks in (("опасные", DANG), ("штатные", BEN))}
-        say("  %-46s %-20s %s" % (name, ", ".join(str(t6[name]["опасные"][x]) for x in T5_DEC),
-                                 ", ".join(str(t6[name]["штатные"][x]) for x in T5_DEC)))
-    out["table5"] = t6
-    out["table5_decisions"] = dec16
-    out["table5_thresholds"] = {"additive": f3(th_a16), "graph": f3(th_g16), "box": f3(th_b16)}
-    out["table5_same_box"] = dec16["Полный метод"] == dec16["Полный метод с ящиком"]
+        say("  %-46s %-20s %s" % (name, ", ".join(str(t6[name]["опасные"][x]) for x in T4_DEC),
+                                 ", ".join(str(t6[name]["штатные"][x]) for x in T4_DEC)))
+    out["table4"] = t6
+    out["table4_decisions"] = dec16
+    out["table4_thresholds"] = {"additive": f3(th_a16), "graph": f3(th_g16), "box": f3(th_b16)}
+    out["table4_same_box"] = dec16["Полный метод"] == dec16["Полный метод с ящиком"]
     build = [s["id"] for s in CAT["v2"]]
-    out["table5_details"] = {
+    out["table4_details"] = {
         "binary_admits_dangerous": [k for k in DANG if dec16["Бинарный контроль"][k] == "допуск"],
         "binary_rejects_benign": [k for k in BEN if dec16["Бинарный контроль"][k] == "отказ"],
         "rebuild_rejects_benign": [k for k in BEN if dec16["Бинарный контроль с обязательной пересборкой"][k] == "отказ"],
@@ -608,7 +608,7 @@ def main():
         "full_rejects_benign": [k for k in BEN if dec16["Полный метод"][k] == "отказ"],
         "full_manual": [k for k in SC16 if dec16["Полный метод"][k] == "ручное рассмотрение"],
         "full_request": [k for k in SC16 if dec16["Полный метод"][k] == "запрос свидетельств"]}
-    for k_, v_ in out["table5_details"].items():
+    for k_, v_ in out["table4_details"].items():
         say("    %-28s %s" % (k_, v_))
     # интервал порога, при котором решения всех 16 сценариев те же. Решение правила (4) меняется только там, где
     # порог проходит R_min записи с B = 1 (допуск при θ <= R_min) или R_max записи с G = 1 (отказ при θ > R_max),
@@ -679,7 +679,7 @@ ARTICLE = {
         "Графовый индекс без блокирующего условия, калиброванный порог": ("0,776", "Д 6, Р 9, О 2", "О 17"),
         "Полный метод": ("0,75", "Д 8, Р 5, З 2, О 2", "О 17"),
         "Полный метод, калиброванный порог": ("0,776", "Д 6, Р 7, З 2, О 2", "О 17")},
-    "table5": {                                       # опасные (Д, О, Р, З), штатные (Д, О, Р, З)
+    "table4": {                                       # опасные (Д, О, Р, З), штатные (Д, О, Р, З)
         "Бинарный контроль": ((1, 8, 0, 0), (4, 3, 0, 0)),
         "Бинарный контроль с обязательной пересборкой": ((0, 9, 0, 0), (3, 4, 0, 0)),
         "Аддитивный индекс": ((0, 8, 0, 1), (2, 3, 0, 2)),
@@ -760,14 +760,14 @@ def check(out):
        ("отказ (вето)", "запрос свидетельств"))
     eq("смена ключа поставщика без обновления политики (B5a)", rc["key_rotation_B5a"], "отказ (вето)")
     eq("при θ = 0,75 допуска нет (дополнительно)", rc["admitted_at_0.75"], [])
-    # табл. 5 и абзац после неё
-    for name, (exp_d, exp_b) in ARTICLE["table5"].items():
-        got = tuple(tuple(out["table5"][name][grp][x] for x in T5_DEC) for grp in ("опасные", "штатные"))
-        eq("табл. 5, %s: опасные и штатные (Д, О, Р, З)" % name, got, (exp_d, exp_b))
-    eq("пороги по эталону: аддитивный, с ящиком", (out["table5_thresholds"]["additive"], out["table5_thresholds"]["box"]),
+    # табл. 4 и абзац после неё
+    for name, (exp_d, exp_b) in ARTICLE["table4"].items():
+        got = tuple(tuple(out["table4"][name][grp][x] for x in T4_DEC) for grp in ("опасные", "штатные"))
+        eq("табл. 4, %s: опасные и штатные (Д, О, Р, З)" % name, got, (exp_d, exp_b))
+    eq("пороги по эталону: аддитивный, с ящиком", (out["table4_thresholds"]["additive"], out["table4_thresholds"]["box"]),
        ("0,840", "0,270"))
-    eq("полный метод с ящиком даёт те же решения", out["table5_same_box"], True)
-    td = out["table5_details"]
+    eq("полный метод с ящиком даёт те же решения", out["table4_same_box"], True)
+    td = out["table4_details"]
     eq("бинарный контроль допустил скомпрометированного сборщика без пересборки", td["binary_admits_dangerous"], ["A5b"])
     eq("обязательная пересборка: отклонённые штатные и добавленный к ним выпуск без пересборки",
        (td["rebuild_rejects_benign"], sorted(set(td["rebuild_rejects_benign"]) - set(td["binary_rejects_benign"]))),
