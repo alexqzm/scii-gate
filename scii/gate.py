@@ -18,7 +18,7 @@ import sys
 import time
 
 from . import __version__
-from .model import ADMIT, BOTTOM, REJECT, REQUEST, REVIEW, STATE_NAME, Profile, evaluate
+from .model import ADMIT, BOTTOM, F, REJECT, REQUEST, REVIEW, STATE_NAME, Profile, evaluate
 
 EXIT = {ADMIT: 0, REVIEW: 10, REQUEST: 20, REJECT: 30}
 
@@ -85,15 +85,25 @@ def main(argv=None) -> int:
     t0 = time.perf_counter()
     reasons, artifact = {}, None
     if a.cmd == "verify":
-        from .checks import Context, run_checks
-        with open(a.policy, encoding="utf-8") as f:
-            policy = json.load(f)
-        ctx = Context(a.bundle, policy, os.path.dirname(os.path.abspath(a.policy)))
-        res = run_checks(profile, ctx)
-        states = {k: r.state for k, r in res.items()}
-        reasons = {k: r.reason for k, r in res.items()}
-        artifact = {"path": ctx.bundle["artifact"], "sha256": ctx.artifact_sha256,
-                    "image_sha256": ctx._image[1] if ctx._image else None}
+        from .checks import BundleError, Context, run_checks
+        try:
+            with open(a.policy, encoding="utf-8") as f:
+                policy = json.load(f)
+        except (OSError, ValueError) as ex:
+            print("ошибка политики: %s" % ex, file=sys.stderr)
+            return 2
+        try:
+            ctx = Context(a.bundle, policy, os.path.dirname(os.path.abspath(a.policy)))
+        except BundleError as ex:
+            # комплект не разбирается: каждое свидетельство опровергнуто, правило (4) даёт отказ (вето)
+            states = {sid: F for sid in profile.evidence}
+            reasons = {sid: "комплект не разбирается: %s" % ex for sid in profile.evidence}
+        else:
+            res = run_checks(profile, ctx)
+            states = {k: r.state for k, r in res.items()}
+            reasons = {k: r.reason for k, r in res.items()}
+            artifact = {"path": ctx.bundle["artifact"], "sha256": ctx.artifact_sha256,
+                        "image_sha256": ctx._image[1] if ctx._image else None}
     else:
         with open(a.states, encoding="utf-8") as f:
             states = json.load(f)

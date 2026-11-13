@@ -26,6 +26,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import struct
 import subprocess
 import tempfile
@@ -36,6 +37,26 @@ from typing import Callable, Dict, List, Optional, Tuple
 from .model import F, N, P
 
 SLSA_V1 = "https://slsa.dev/provenance/v1"
+MAX_FILE = 64 << 20        # предел размера файла комплекта (пакет, аттестации, объекты git)
+MAX_IMAGE = 32 << 20       # предел распакованного образа apj (флеш CubeOrange 2 МиБ)
+
+
+class BundleError(ValueError):
+    """Комплект не разбирается (нет или испорчен bundle.json, пакет вне комплекта): отказ без проверки."""
+
+
+def read_limited(path: str, limit: int = MAX_FILE) -> bytes:
+    """Чтение обычного файла не больше limit байт. Устройства, каналы и каталоги не читаются."""
+    st = os.stat(path)
+    if not stat.S_ISREG(st.st_mode):
+        raise ValueError("не обычный файл: %s" % os.path.basename(path))
+    if st.st_size > limit:
+        raise ValueError("файл %s больше предела %d байт" % (os.path.basename(path), limit))
+    with open(path, "rb") as f:
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("файл %s больше предела %d байт" % (os.path.basename(path), limit))
+    return data
 
 
 @dataclass
@@ -62,9 +83,14 @@ SIG_FIELD = (16, 92)                                   # signature_length + sign
 
 
 def apj_image(path: str) -> Tuple[dict, bytes]:
-    with open(path, encoding="utf-8") as f:
-        d = json.load(f)
-    return d, zlib.decompress(base64.b64decode(d["image"]))
+    d = json.loads(read_limited(path).decode("utf-8"))
+    if not isinstance(d, dict) or not isinstance(d.get("image"), str):
+        raise ValueError("пакет не в формате apj")
+    z = zlib.decompressobj()
+    img = z.decompress(base64.b64decode(d["image"]), MAX_IMAGE)
+    if z.unconsumed_tail or not z.eof:
+        raise ValueError("образ пакета повреждён или больше предела %d байт" % MAX_IMAGE)
+    return d, img
 
 
 def ap_crc32(data: bytes) -> int:
@@ -110,22 +136,36 @@ class Context:
     """Комплект поставщика + политика получателя + инструменты."""
 
     def __init__(self, bundle_dir: str, policy: dict, policy_dir: str):
-        self.bundle_dir = os.path.abspath(bundle_dir)
-        with open(os.path.join(self.bundle_dir, "bundle.json"), encoding="utf-8") as f:
-            self.bundle = json.load(f)
+        self.bundle_dir = os.path.realpath(bundle_dir)
+        self._image: Optional[Tuple[str, str]] = None
+        try:
+            self.bundle = json.loads(read_limited(self.bpath("bundle.json")).decode("utf-8"))
+        except (OSError, ValueError) as e:
+            raise BundleError("bundle.json не читается: %s" % e) from e
+        b = self.bundle
+        if not (isinstance(b, dict) and isinstance(b.get("artifact"), str) and isinstance(b.get("evidence", {}), dict)
+                and all(isinstance(v, dict) for v in b.get("evidence", {}).values())):
+            raise BundleError("bundle.json не соответствует формату комплекта")
+        try:
+            self.artifact = self.bpath(b["artifact"])
+        except ValueError as e:
+            raise BundleError(str(e)) from e
+        if os.path.lexists(self.artifact) and not os.path.isfile(self.artifact):
+            raise BundleError("пакет не является обычным файлом")
         self.policy = policy
         self.policy_dir = os.path.abspath(policy_dir)
         self.cosign = (os.environ.get("SCII_COSIGN") or policy.get("tools", {}).get("cosign")
                        or shutil.which("cosign") or "cosign")
         self.gpg = shutil.which("gpg") or "gpg"
-        self.artifact = self.bpath(self.bundle["artifact"])
-        self.artifact_sha256 = sha256_file(self.artifact) if os.path.exists(self.artifact) else None
-        self._image: Optional[Tuple[str, str]] = None
+        self.artifact_sha256 = sha256_file(self.artifact) if os.path.isfile(self.artifact) else None
 
     # пути
     def bpath(self, rel: str) -> str:
-        p = os.path.normpath(os.path.join(self.bundle_dir, rel))
-        if not p.startswith(self.bundle_dir + os.sep) and p != self.bundle_dir:
+        """Путь внутри комплекта. Символические ссылки раскрываются, итог должен остаться в комплекте."""
+        if not isinstance(rel, str) or not rel or os.path.isabs(rel) or "\0" in rel:
+            raise ValueError("недопустимый путь в комплекте: %r" % (rel,))
+        p = os.path.realpath(os.path.join(self.bundle_dir, rel))
+        if not p.startswith(self.bundle_dir + os.sep):
             raise ValueError("путь вне комплекта: %s" % rel)
         return p
 
@@ -193,8 +233,7 @@ def verify_attestation(ctx: Context, envelope: str, blob: str, role: str, ptype:
         except (OSError, subprocess.TimeoutExpired) as e:
             return Result(N, "сбой проверки: %s" % e)
         if r.returncode == 0:
-            with open(envelope, encoding="utf-8") as f:
-                env = json.load(f)
+            env = json.loads(read_limited(envelope).decode("utf-8"))
             stmt = json.loads(base64.b64decode(env["payload"]))
             return Result(P, "подпись роли %s верна" % role, {"statement": stmt, "key": os.path.basename(key)})
         msgs.append(_last_line(r))
@@ -236,8 +275,7 @@ def git_object_id(kind: str, raw: bytes) -> str:
 
 def check_git_commit_signature(ctx: Context, ev: dict, params: dict) -> Result:
     """Подпись коммита исходного кода (заголовок gpgsig в объекте коммита)."""
-    with open(ctx.bpath(ev["commit_object"]), "rb") as f:
-        raw = f.read()
+    raw = read_limited(ctx.bpath(ev["commit_object"]))
     commit = git_object_id("commit", raw)
     if commit != ctx.expect.get("source_commit"):
         return Result(F, "объект коммита не соответствует ожидаемому коммиту %s" % ctx.expect.get("source_commit"),
@@ -268,8 +306,7 @@ def _split_commit_signature(raw: str):
 
 def check_signed_tag(ctx: Context, ev: dict, params: dict) -> Result:
     """Подписанный (OpenPGP) тег выпуска поставщика, указывающий на ожидаемый коммит."""
-    with open(ctx.bpath(ev["tag_object"]), encoding="utf-8", errors="replace") as f:
-        raw = f.read()
+    raw = read_limited(ctx.bpath(ev["tag_object"])).decode("utf-8", errors="replace")
     marker = "-----BEGIN PGP SIGNATURE-----"
     if marker not in raw:
         return Result(N, "тег не подписан")
@@ -291,8 +328,7 @@ def check_signed_tag(ctx: Context, ev: dict, params: dict) -> Result:
 def _commit_blob(ctx: Context, ev: dict) -> str:
     """Файл с хешем коммита: к нему привязаны аттестации, относящиеся к исходному коду."""
     path = ctx.bpath(ev["subject"])
-    with open(path, encoding="utf-8") as f:
-        txt = f.read().strip()
+    txt = read_limited(path, 4096).decode("utf-8").strip()
     if txt != ctx.expect.get("source_commit"):
         raise ValueError("аттестация относится к коммиту %s, ожидался %s" % (txt[:12],
                          str(ctx.expect.get("source_commit"))[:12]))
@@ -388,8 +424,7 @@ def check_repository_log(ctx: Context, ev: dict, params: dict) -> Result:
     if not ok:
         return Result(F, "журнал хранилища не подписан ключом хранилища")
     name = ctx.bundle.get("build_product_name", "arducopter.bin")
-    with open(log, encoding="utf-8") as f:
-        entries = [json.loads(x) for x in f if x.strip()]
+    entries = [json.loads(x) for x in read_limited(log).decode("utf-8").splitlines() if x.strip()]
     mine = [e for e in entries if e.get("name") == name]
     if not mine:
         return Result(N, "в журнале нет записи об артефакте %s" % name)
@@ -531,22 +566,24 @@ CHECKS: Dict[str, Callable[[Context, dict, dict], Result]] = {
 
 
 def run_checks(profile, ctx: Context) -> Dict[str, Result]:
+    """Состояния всех свидетельств. Любая ошибка разбора предъявленного свидетельства даёт F, а не аварию:
+    предъявленное, но не проверяемое свидетельство опровергнуто."""
     out = {}
     try:
         for sid, et in profile.evidence.items():
-            ev = ctx.presented(sid)
-            if ev is None:
-                out[sid] = Result(N, "не предъявлено")
-                continue
-            kind = et.check.get("type")
-            fn = CHECKS.get(kind)
-            if fn is None:
-                out[sid] = Result(N, "на стенде нет проверки для типа %s" % kind)
-                continue
             try:
+                ev = ctx.presented(sid)
+                if ev is None:
+                    out[sid] = Result(N, "не предъявлено")
+                    continue
+                kind = et.check.get("type")
+                fn = CHECKS.get(kind)
+                if fn is None:
+                    out[sid] = Result(N, "на стенде нет проверки для типа %s" % kind)
+                    continue
                 out[sid] = fn(ctx, ev, et.check)
-            except (OSError, ValueError, KeyError, struct.error, json.JSONDecodeError, zlib.error) as e:
-                out[sid] = Result(F, "свидетельство не разбирается: %s" % e)
+            except Exception as e:  # noqa: BLE001 — недоверенный комплект не должен ронять гейт
+                out[sid] = Result(F, "свидетельство не разбирается: %s: %s" % (type(e).__name__, e))
     finally:
         ctx.close()
     return out
