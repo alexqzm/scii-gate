@@ -123,3 +123,16 @@ def test_read_limited_rejects_large_and_special_files(tmp_path):
     assert checks.read_limited(str(p), 2048) == b"x" * 1025
     with pytest.raises(ValueError):
         checks.read_limited(str(tmp_path), 1024)
+
+
+
+@pytest.mark.parametrize("base, sid, want", [("B1", "s52", "P"), ("B1", "s53", "P"), ("A4", "s52", "F")])
+def test_intrinsic_device_checks_run_without_declaration(tmp_path, base, sid, want):
+    """С 0.1.7 проверки версии и платы выполняются по образу, даже если комплект их не заявляет:
+    канал доставки не может скрыть откат (A4), убрав заявку."""
+    d = tmp_path / "bundle"
+    shutil.copytree(os.path.join(ROOT, "data", "bundles", base), d)
+    edit(d, lambda b: b["evidence"].pop(sid))
+    code, rep = run(d, tmp_path)
+    assert rep["states"][sid] == want
+    assert "комплект проверку не заявлял" in rep["reasons"][sid]

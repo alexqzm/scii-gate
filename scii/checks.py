@@ -551,6 +551,10 @@ def check_gh_attestation(ctx: Context, ev: dict, params: dict) -> Result:
                   {"statement": stmt})
 
 
+#: Проверки по самому пакету и политике получателя, без данных поставщика. С версии 0.1.7 гейт выполняет их всегда,
+#: даже если комплект их не заявляет: иначе канал доставки мог бы убрать заявку и скрыть, например, откат версии.
+INTRINSIC = {"secure_boot", "version", "board"}
+
 CHECKS: Dict[str, Callable[[Context, dict, dict], Result]] = {
     "git_commit_signature": check_git_commit_signature,
     "signed_tag": check_signed_tag,
@@ -572,16 +576,21 @@ def run_checks(profile, ctx: Context) -> Dict[str, Result]:
     try:
         for sid, et in profile.evidence.items():
             try:
+                kind = et.check.get("type")
                 ev = ctx.presented(sid)
+                undeclared = ev is None and kind in INTRINSIC and ctx.artifact.endswith(".apj")
+                if undeclared:
+                    ev = {}                       # проверка по образу пакета, заявка комплекта не нужна
                 if ev is None:
                     out[sid] = Result(N, "не предъявлено")
                     continue
-                kind = et.check.get("type")
                 fn = CHECKS.get(kind)
                 if fn is None:
                     out[sid] = Result(N, "на стенде нет проверки для типа %s" % kind)
                     continue
                 out[sid] = fn(ctx, ev, et.check)
+                if undeclared:
+                    out[sid].reason += " (комплект проверку не заявлял, выполнена по образу)"
             except Exception as e:  # noqa: BLE001 — недоверенный комплект не должен ронять гейт
                 out[sid] = Result(F, "свидетельство не разбирается: %s: %s" % (type(e).__name__, e))
     finally:
