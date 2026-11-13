@@ -4,7 +4,7 @@ title: "scii-gate: гейт допуска обновлений ПО кибер�
 type: software
 version: 0.1.6
 doi: 10.5281/zenodo.23833592
-date-released: 2026-11-06
+date-released: 2026-11-13
 license: Apache-2.0
 repository-code: "https://github.com/alexqzm/scii-gate"
 authors:
